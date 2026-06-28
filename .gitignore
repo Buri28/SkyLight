@@ -1,0 +1,20 @@
+## Visual Studio / .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+*.userprefs
+
+## JetBrains Rider
+.idea/
+*.sln.iml
+
+## VSCode
+.vscode/launch.json
+
+## Claude AI
+.claude/
+
+## Logs
+*.log

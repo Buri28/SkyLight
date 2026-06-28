@@ -1,0 +1,19 @@
+{
+  "author": "Buri28",
+  "description": "どのカスタムプラットフォームでもステージを明るくし、青空スカイボックスを差し込んでノーツのブレ（残像）を抑える汎用MOD",
+  "gameVersion": "1.40.8",
+  "id": "SkyLight",
+  "name": "SkyLight",
+  "version": "0.1.0",
+  "dependsOn": {
+    "BSIPA": "^4.3.0",
+    "BeatSaberMarkupLanguage": "^1.12.0",
+    "SiraUtil": "^3.1.0"
+  },
+  "features": {},
+  "loadBefore": [],
+  "loadAfter": [
+    "BeatSaberMarkupLanguage",
+    "SiraUtil"
+  ]
+}
