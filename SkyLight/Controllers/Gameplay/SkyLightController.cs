@@ -91,7 +91,7 @@ namespace SkyLight.Controllers.Gameplay
         // Bloom は独立トグル。各対象（背景/床/構造物/リング）を Color×Brightness と Alpha(不透明度) で半透明着色。
         // 空ドームの半径（内部固定）。カメラの far クリップに収まり、かつ構造物より外側に出ない値。
         private const float DomeScale = 60f;
-        private const int TargetRefreshInterval = 120;
+        private const int TargetRefreshInterval = 30; // 約0.5秒ごとに後発の対象を増分収集
         private bool _domeBuilt;
         private int _floorMode; // 0=Bloom ONでカメラ背景に映す / 1=Bloom OFFでフラット塗り
         private bool _floorPainted;
@@ -160,18 +160,18 @@ namespace SkyLight.Controllers.Gameplay
                 p.Collect(hints, exclude, disableMirror, colorize);
                 painted = true;
             }
-            else if (want && _frame % TargetRefreshInterval == 0 && !p.HasLiveTargets)
-            {
-                p.Restore();
-                p.Collect(hints, exclude, disableMirror, colorize);
-            }
             else if (!want && painted)
             {
                 p.Restore();
                 painted = false;
             }
             if (painted)
+            {
+                // 後から出現する対象（リング等は再生開始から少し遅れて現れる/動く）を増分で拾って塗る。
+                if (_frame % TargetRefreshInterval == 0)
+                    p.Refresh(hints, exclude, disableMirror);
                 p.Apply(rgba);
+            }
         }
 
         // hex×brightness（RGB）に alpha を載せた色を作る。
@@ -185,10 +185,7 @@ namespace SkyLight.Controllers.Gameplay
         private string GetEffectiveRingHints()
         {
             var hints = (_config.RingShaderHints ?? string.Empty).Trim();
-            if (hints.Length == 0) return "Ring;TrackConstruction;BackColumns";
-            if (string.Equals(hints, "Ring", StringComparison.OrdinalIgnoreCase))
-                return "Ring;TrackConstruction;BackColumns";
-            return hints;
+            return hints.Length == 0 ? "Ring" : hints;
         }
 
         public void Dispose()

@@ -22,6 +22,7 @@ namespace SkyLight.Controllers.Gameplay
         private bool _assigned;        // 単色マテリアルを各レンダラーへ代入済みか
         private bool _clonesAssigned;  // 複製マテリアルを代入済みか
         private readonly bool _alwaysReassign; // 毎フレーム再代入する（ミラー等が戻してくる対象向け。対象数が少ない床用）
+        private readonly HashSet<int> _ids = new(); // 収集済みレンダラーの InstanceID（増分収集の重複防止）
         private bool _logged;
 
         public TargetPainter(string tag, bool alwaysReassign = false) { _tag = tag; _alwaysReassign = alwaysReassign; }
@@ -35,42 +36,79 @@ namespace SkyLight.Controllers.Gameplay
         {
             _colorize = colorize;
             _painted.Clear();
+            _ids.Clear();
+            _assigned = false;
+            _clonesAssigned = false;
+
             var hintArr = Split(hints);
             var exArr = Split(excludeHints);
             if (hintArr.Length == 0) { LogOnce(); return; }
 
             foreach (var r in UnityEngine.Object.FindObjectsOfType<Renderer>())
             {
-                if (r == null) continue;
-                string name = r.gameObject.name;
-                string path = GetPath(r.transform);
-                var shaders = r.sharedMaterials.Where(m => m != null && m.shader != null).Select(m => m.shader.name).ToArray();
-
-                bool match = hintArr.Any(h => name.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0
-                                              || path.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0
-                                              || shaders.Any(s => s.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0));
-                if (!match) continue;
-                bool excluded = exArr.Any(h => name.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0
-                                               || path.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0
-                                               || shaders.Any(s => s.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0));
-                if (excluded) continue;
-
+                if (r == null || !Matches(r, hintArr, exArr)) continue;
+                _ids.Add(r.GetInstanceID());
                 _painted.Add((r, r.sharedMaterials));
-
-                if (disableMirror)
-                {
-                    foreach (var comp in r.GetComponents<Behaviour>())
-                    {
-                        if (comp == null) continue;
-                        if (comp.GetType().Name.IndexOf("Mirror", StringComparison.OrdinalIgnoreCase) < 0) continue;
-                        if (_disabledMirrors.Any(d => d.b == comp)) continue;
-                        _disabledMirrors.Add((comp, comp.enabled));
-                        comp.enabled = false;
-                    }
-                }
+                DisableMirrorsOn(r, disableMirror);
             }
 
             LogOnce();
+        }
+
+        // 後から出現した対象を増分で追加する（リング等は再生開始から少し遅れて現れる/動くため）。
+        // 既存の塗りは保持し、新規が見つかったら次の Apply で塗り直す。
+        public void Refresh(string hints, string excludeHints, bool disableMirror)
+        {
+            var hintArr = Split(hints);
+            if (hintArr.Length == 0) return;
+            var exArr = Split(excludeHints);
+
+            int before = _painted.Count;
+            foreach (var r in UnityEngine.Object.FindObjectsOfType<Renderer>())
+            {
+                if (r == null || !Matches(r, hintArr, exArr)) continue;
+                if (!_ids.Add(r.GetInstanceID())) continue; // 既知はスキップ
+                _painted.Add((r, r.sharedMaterials));
+                DisableMirrorsOn(r, disableMirror);
+            }
+
+            // 新規が増えたら塗り直し（代入し直して新規にも適用する）。
+            if (_painted.Count > before)
+            {
+                _assigned = false;
+                _clonesAssigned = false;
+                var added = _painted.Skip(before).Take(8).Select(p => p.renderer != null ? p.renderer.gameObject.name : "?");
+                Plugin.Log.Info($"[SkyLight][{_tag}] refresh added {_painted.Count - before} (total {_painted.Count}) names=[{string.Join(", ", added)}]");
+            }
+        }
+
+        private bool Matches(Renderer r, string[] hintArr, string[] exArr)
+        {
+            string name = r.gameObject.name;
+            string path = GetPath(r.transform);
+            var shaders = r.sharedMaterials.Where(m => m != null && m.shader != null).Select(m => m.shader.name).ToArray();
+
+            bool match = hintArr.Any(h => name.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0
+                                          || path.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0
+                                          || shaders.Any(s => s.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0));
+            if (!match) return false;
+            bool excluded = exArr.Any(h => name.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0
+                                           || path.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0
+                                           || shaders.Any(s => s.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0));
+            return !excluded;
+        }
+
+        private void DisableMirrorsOn(Renderer r, bool disableMirror)
+        {
+            if (!disableMirror) return;
+            foreach (var comp in r.GetComponents<Behaviour>())
+            {
+                if (comp == null) continue;
+                if (comp.GetType().Name.IndexOf("Mirror", StringComparison.OrdinalIgnoreCase) < 0) continue;
+                if (_disabledMirrors.Any(d => d.b == comp)) continue;
+                _disabledMirrors.Add((comp, comp.enabled));
+                comp.enabled = false;
+            }
         }
 
         public void Apply(Color rgba)
@@ -167,6 +205,7 @@ namespace SkyLight.Controllers.Gameplay
             _disabledMirrors.Clear();
 
             if (_mat != null) { UnityEngine.Object.Destroy(_mat); _mat = null; }
+            _ids.Clear();
             _assigned = false;
             _clonesAssigned = false;
             _logged = false;
