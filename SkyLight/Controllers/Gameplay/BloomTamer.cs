@@ -13,8 +13,12 @@ namespace SkyLight.Controllers.Gameplay
     {
         private readonly List<(Behaviour b, bool origEnabled)> _mainEffectTargets = new();
         private readonly HashSet<int> _trackedIds = new();
+        private int _emptyRefreshes;
+        private bool _settled;     // MainEffectController が出揃ったら探索を止める
         private bool _active;
         private bool _logged;
+        private bool _everApplied;
+        private bool _lastDisable;
 
         public void Capture()
         {
@@ -22,9 +26,10 @@ namespace SkyLight.Controllers.Gameplay
             Refresh(logIfChanged: true);
         }
 
-        // 新規に見つかった MainEffectController だけ追加する（増分収集）。
+        // 新規に見つかった MainEffectController だけ追加する（増分収集）。出揃ったら探索を停止。
         public void Refresh(bool logIfChanged = false)
         {
+            if (_settled) return;
             int before = _mainEffectTargets.Count;
             foreach (var b in Resources.FindObjectsOfTypeAll<Behaviour>())
             {
@@ -32,19 +37,39 @@ namespace SkyLight.Controllers.Gameplay
                 _mainEffectTargets.Add((b, b.enabled));
             }
 
-            if (logIfChanged && !_logged && _mainEffectTargets.Count != before)
+            if (_mainEffectTargets.Count != before)
             {
-                Plugin.Log.Info($"[SkyLight][bloomtamer] MainEffectController instances: {_mainEffectTargets.Count}");
-                _logged = true;
+                _emptyRefreshes = 0;
+                if (logIfChanged && !_logged)
+                {
+                    Plugin.Log.Info($"[SkyLight][bloomtamer] MainEffectController instances: {_mainEffectTargets.Count}");
+                    _logged = true;
+                }
+            }
+            else if (++_emptyRefreshes >= 6)
+            {
+                _settled = true; // 連続6回新規ゼロ＝出揃った。以降 FindObjectsOfTypeAll を回さない。
             }
         }
 
         // disableBloom=true なら全画面ブルームを無効化、false なら有効化（素のまま）。
+        // OFF（disableBloom=true）はライトイベントで再有効化されうるので毎フレーム強制。
+        // ON は通常そのままなので、OFF→ON に切り替わった初回だけ戻す（毎フレームのループを避ける）。
         public void Apply(bool disableBloom)
         {
             if (!_active) return;
-            foreach (var (b, _) in _mainEffectTargets)
-                if (b != null) b.enabled = !disableBloom;
+            if (disableBloom)
+            {
+                foreach (var (b, _) in _mainEffectTargets)
+                    if (b != null) b.enabled = false;
+            }
+            else if (!_everApplied || _lastDisable)
+            {
+                foreach (var (b, _) in _mainEffectTargets)
+                    if (b != null) b.enabled = true;
+            }
+            _everApplied = true;
+            _lastDisable = disableBloom;
         }
 
         public void Reassert(bool disableBloom) => Apply(disableBloom);
@@ -55,6 +80,9 @@ namespace SkyLight.Controllers.Gameplay
                 if (b != null) b.enabled = origEnabled;
             _mainEffectTargets.Clear();
             _trackedIds.Clear();
+            _emptyRefreshes = 0;
+            _settled = false;
+            _everApplied = false;
             _active = false;
         }
     }
