@@ -23,12 +23,11 @@ namespace SkyLight.Controllers.Gameplay
         private bool _clonesAssigned;  // 複製マテリアルを代入済みか
         private readonly bool _alwaysReassign; // 毎フレーム再代入する（ミラー等が戻してくる対象向け。対象数が少ない床用）
         private readonly HashSet<int> _ids = new(); // 収集済みレンダラーの InstanceID（増分収集の重複防止）
+        private int _emptyRefreshes;   // 連続で「新規ゼロ」だった Refresh 回数
+        private bool _refreshSettled;  // 対象が出揃ったら探索(FindObjectsOfType)を止める
         private bool _logged;
 
         public TargetPainter(string tag, bool alwaysReassign = false) { _tag = tag; _alwaysReassign = alwaysReassign; }
-
-        public bool HasTargets => _painted.Count > 0;
-        public bool HasLiveTargets => _painted.Any(p => p.renderer != null);
 
         // hints / excludeHints: ';' 区切り。名前 または シェーダー名に部分一致で対象/除外。
         // colorize=true: 単色（rgba）で塗る。false: 元の色を残し透明度(rgba.a)だけ下げる。
@@ -39,6 +38,8 @@ namespace SkyLight.Controllers.Gameplay
             _ids.Clear();
             _assigned = false;
             _clonesAssigned = false;
+            _emptyRefreshes = 0;
+            _refreshSettled = false;
 
             var hintArr = Split(hints);
             var exArr = Split(excludeHints);
@@ -59,6 +60,7 @@ namespace SkyLight.Controllers.Gameplay
         // 既存の塗りは保持し、新規が見つかったら次の Apply で塗り直す。
         public void Refresh(string hints, string excludeHints, bool disableMirror)
         {
+            if (_refreshSettled) return; // 対象が出揃ったら探索しない（FindObjectsOfType を回さない）
             var hintArr = Split(hints);
             if (hintArr.Length == 0) return;
             var exArr = Split(excludeHints);
@@ -77,8 +79,14 @@ namespace SkyLight.Controllers.Gameplay
             {
                 _assigned = false;
                 _clonesAssigned = false;
+                _emptyRefreshes = 0;
                 var added = _painted.Skip(before).Take(8).Select(p => p.renderer != null ? p.renderer.gameObject.name : "?");
                 Plugin.Log.Info($"[SkyLight][{_tag}] refresh added {_painted.Count - before} (total {_painted.Count}) names=[{string.Join(", ", added)}]");
+            }
+            else if (++_emptyRefreshes >= 6)
+            {
+                // 連続6回(=約6秒)新規ゼロなら出揃ったとみなして探索を停止（以降 FindObjectsOfType を回さない）。
+                _refreshSettled = true;
             }
         }
 
@@ -208,6 +216,8 @@ namespace SkyLight.Controllers.Gameplay
             _ids.Clear();
             _assigned = false;
             _clonesAssigned = false;
+            _emptyRefreshes = 0;
+            _refreshSettled = false;
             _logged = false;
         }
 

@@ -32,6 +32,7 @@ namespace SkyLight.Controllers.Gameplay
 
         // 触ったカメラの元 clearFlags / 背景色（復元用）。MainCamera はシーンをまたいで生き残るため必ず戻す。
         private readonly Dictionary<Camera, (CameraClearFlags flags, Color bg)> _origCameras = new();
+        private Camera? _mainCamCache; // 反射用にメインカメラ背景色を設定する対象（1回探索してキャッシュ）
 
         [Inject]
         public SkyLightController(PluginConfig config)
@@ -43,14 +44,11 @@ namespace SkyLight.Controllers.Gameplay
         {
             if (!_config.Enabled) return;
 
+            // 診断ダンプは DumpScene のときだけ（毎曲のオブジェクト走査コストを避ける）。
             if (_config.DebugLogging && _config.DumpScene)
             {
                 try { SceneDiagnostics.Dump(); }
                 catch (Exception ex) { Plugin.Log.Warn($"[SkyLight] Scene dump failed: {ex.Message}"); }
-            }
-
-            if (_config.DebugLogging)
-            {
                 try { BloomDiagnostics.DumpOnce(); }
                 catch (Exception ex) { Plugin.Log.Warn($"[SkyLight] Bloom dump failed: {ex.Message}"); }
             }
@@ -91,7 +89,7 @@ namespace SkyLight.Controllers.Gameplay
         // Bloom は独立トグル。各対象（背景/床/構造物/リング）を Color×Brightness と Alpha(不透明度) で半透明着色。
         // 空ドームの半径（内部固定）。カメラの far クリップに収まり、かつ構造物より外側に出ない値。
         private const float DomeScale = 60f;
-        private const int TargetRefreshInterval = 30; // 約0.5秒ごとに後発の対象を増分収集
+        private const int TargetRefreshInterval = 60; // 約1秒ごとに後発の対象を増分収集（出揃ったら自動で停止）
         private bool _domeBuilt;
         private int _floorMode; // 0=Bloom ONでカメラ背景に映す / 1=Bloom OFFでフラット塗り
         private bool _floorPainted;
@@ -233,15 +231,21 @@ namespace SkyLight.Controllers.Gameplay
         }
 
         // メインカメラの backgroundColor だけを設定（clearFlags は据え置き）。反射カメラがこれを引き継いで床に映す。
+        // メインカメラは1回だけ探索してキャッシュし、色が変わったときだけ設定する（毎フレームの allCameras 走査を避ける）。
         private void SetMainCameraBackgroundColor(Color color)
         {
-            foreach (var cam in Camera.allCameras)
+            if (_mainCamCache == null)
             {
-                if (cam == null || !cam.CompareTag("MainCamera")) continue;
-                if (!_origCameras.ContainsKey(cam))
-                    _origCameras[cam] = (cam.clearFlags, cam.backgroundColor);
-                cam.backgroundColor = color; // clearFlags は変えない
+                _mainCamCache = Camera.main;
+                if (_mainCamCache == null)
+                    foreach (var cam in Camera.allCameras)
+                        if (cam != null && cam.CompareTag("MainCamera")) { _mainCamCache = cam; break; }
+                if (_mainCamCache == null) return;
+                if (!_origCameras.ContainsKey(_mainCamCache))
+                    _origCameras[_mainCamCache] = (_mainCamCache.clearFlags, _mainCamCache.backgroundColor);
             }
+            if (_mainCamCache.backgroundColor != color)
+                _mainCamCache.backgroundColor = color; // clearFlags は変えない
         }
 
         // 背景をクリアするカメラ(Skybox/SolidColor)の背景を空色で塗り、黒い虚無を消す。
@@ -273,6 +277,7 @@ namespace SkyLight.Controllers.Gameplay
                 kv.Key.backgroundColor = kv.Value.bg;
             }
             _origCameras.Clear();
+            _mainCamCache = null;
             _active = false;
         }
     }
