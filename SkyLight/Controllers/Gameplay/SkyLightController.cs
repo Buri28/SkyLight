@@ -22,7 +22,6 @@ namespace SkyLight.Controllers.Gameplay
         // 全画面ブルームの ON/OFF。
         private readonly BloomTamer _bloomTamer = new();
         // 床：Bloom ON は FloorColor を反射ドームに塗って反射、Bloom OFF はフラット塗り。
-        private readonly ReflectionDome _refDome = new();
         private readonly TargetPainter _floorFlat = new("floor", alwaysReassign: true);
         // 構造物・リングは半透明で着色するペインター。
         private readonly TargetPainter _structures = new("struct");
@@ -94,7 +93,7 @@ namespace SkyLight.Controllers.Gameplay
         private const float DomeScale = 60f;
         private const int TargetRefreshInterval = 120;
         private bool _domeBuilt;
-        private int _floorMode; // 0=なし / 1=フラット塗り / 2=反射ドーム
+        private int _floorMode; // 0=Bloom ONでカメラ背景に映す / 1=Bloom OFFでフラット塗り
         private bool _floorPainted;
         private bool _structPainted;
         private bool _ringPainted;
@@ -125,8 +124,8 @@ namespace SkyLight.Controllers.Gameplay
                 _backdrop.SetColor(GetDomeColor());
             }
 
-            // 床の色は常に FloorColor。塗る場所が違う：
-            //  ① Bloom ON  → ミラーが映す「カメラ背景」を FloorColor にする（FillCameraBackgrounds で処理）。反射なので光らない。
+            // 床の色は FloorColor。塗り方が Bloom で違う：
+            //  ① Bloom ON  → メインカメラの backgroundColor を FloorColor にする（ミラーが反射＝床に映る・直接背景は据え置きで白飛びしない）。Apply() で処理。
             //  ② Bloom OFF → 床に直接フラット塗り。
             int wantFloorMode = (_config.PaintFloor && !bloomOn) ? 1 : 0;
             if (wantFloorMode != _floorMode)
@@ -199,7 +198,6 @@ namespace SkyLight.Controllers.Gameplay
 
             _backdrop.Cleanup();
             _bloomTamer.Restore();
-            _refDome.Disable();
             _floorFlat.Restore();
             _structures.Restore();
             _ring.Restore();
@@ -215,12 +213,38 @@ namespace SkyLight.Controllers.Gameplay
         private Color GetDomeColor()
             => MakeColor(_config.BackgroundColor, _config.BackgroundBrightness, 1f, new Color(0.29f, 0.48f, 0.71f));
 
+
         // ─── 適用 / 退避 / 復元 ────────────────────────────────────────────
 
         private void Apply()
         {
-            if (_config.FillBackground)
-                FillCameraBackgrounds();
+            bool bloomOn = _config.Bloom && !_config.RecolorBackground;
+            if (bloomOn)
+            {
+                // Bloom ON：ミラーが映す背景＝メインカメラの backgroundColor を FloorColor にする。
+                // clearFlags は変えない（Skybox のまま＝直接の背景は元のまま＝白飛びしない）。
+                // 反射カメラは CopyFrom(メインカメラ) で backgroundColor を引き継ぎ SolidColor でクリアするので、床に FloorColor が映る。
+                if (_config.PaintFloor)
+                    SetMainCameraBackgroundColor(MakeColor(_config.FloorColor, _config.FloorBrightness, 1f, new Color(0.13f, 0.16f, 0.19f)));
+            }
+            else
+            {
+                // Bloom OFF：Sky Background ON のときはカメラ背景を空色で塗る（空ドーム用）。
+                if (_config.FillBackground && _config.RecolorBackground)
+                    FillCameraBackgrounds();
+            }
+        }
+
+        // メインカメラの backgroundColor だけを設定（clearFlags は据え置き）。反射カメラがこれを引き継いで床に映す。
+        private void SetMainCameraBackgroundColor(Color color)
+        {
+            foreach (var cam in Camera.allCameras)
+            {
+                if (cam == null || !cam.CompareTag("MainCamera")) continue;
+                if (!_origCameras.ContainsKey(cam))
+                    _origCameras[cam] = (cam.clearFlags, cam.backgroundColor);
+                cam.backgroundColor = color; // clearFlags は変えない
+            }
         }
 
         // 背景をクリアするカメラ(Skybox/SolidColor)の背景を空色で塗り、黒い虚無を消す。
