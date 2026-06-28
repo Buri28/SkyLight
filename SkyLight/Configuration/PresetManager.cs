@@ -89,7 +89,10 @@ namespace SkyLight.Configuration
             }
         }
 
-        /// <summary>name のプリセットを読み込み、cfg に反映する。存在するキーだけ上書きする。</summary>
+        /// <summary>
+        /// name のプリセットを読み込み、cfg に反映する。プリセットを「完全なスナップショット」として扱い、
+        /// ファイルに無い項目は既定値へ戻す（古いスキーマのプリセットでも予測可能な状態になる）。
+        /// </summary>
         public static bool Load(string name, PluginConfig cfg)
         {
             if (string.IsNullOrWhiteSpace(name) || cfg == null) return false;
@@ -102,14 +105,22 @@ namespace SkyLight.Configuration
             try
             {
                 var obj = JObject.Parse(File.ReadAllText(path));
+                var defaults = new PluginConfig(); // ファイルに無い項目はこの既定値に戻す
                 foreach (var p in ConfigProps())
                 {
-                    if (!obj.TryGetValue(p.Name, out var tok) || tok.Type == JTokenType.Null) continue;
-                    object value =
-                        p.PropertyType == typeof(bool)   ? (object)tok.Value<bool>() :
-                        p.PropertyType == typeof(int)    ? (object)tok.Value<int>() :
-                        p.PropertyType == typeof(float)  ? (object)tok.Value<float>() :
-                                                           (object)(tok.Value<string>() ?? "");
+                    object value;
+                    if (obj.TryGetValue(p.Name, out var tok) && tok.Type != JTokenType.Null)
+                    {
+                        value =
+                            p.PropertyType == typeof(bool)   ? (object)tok.Value<bool>() :
+                            p.PropertyType == typeof(int)    ? (object)tok.Value<int>() :
+                            p.PropertyType == typeof(float)  ? (object)tok.Value<float>() :
+                                                               (object)(tok.Value<string>() ?? "");
+                    }
+                    else
+                    {
+                        value = p.GetValue(defaults); // プリセットに無い項目は既定値
+                    }
                     p.SetValue(cfg, value);
                 }
                 cfg.Changed();
