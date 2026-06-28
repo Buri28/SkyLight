@@ -1,0 +1,114 @@
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using UnityEngine;
+
+namespace SkyLight.Controllers
+{
+    // 「なぜ明るくならないのか」を実機で突き止めるための調査ダンプ。
+    // 曲開始時に1回だけ、カメラ構成・シェーダー在庫・現在の RenderSettings をログへ吐く。
+    internal static class SceneDiagnostics
+    {
+        public static void Dump()
+        {
+            DumpRenderSettings();
+            DumpCameras();
+            DumpShaderInventory();
+            ProbeSkyboxShaders();
+            DumpLargeFlatRenderers();
+        }
+
+        // CustomPlatforms 環境では本物の床(Mirror)がプラットフォーム自身のメッシュに隠れて見えないことがあるため、
+        // 「床らしい」レンダラー（Y方向に薄く、XZ方向に広い）を bounds から推定して列挙する。
+        // 名前一致(FloorPaintShaderHint)が効かない環境で、本当に塗るべきオブジェクト名を特定するための調査用。
+        private static void DumpLargeFlatRenderers()
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("[SkyLight][diag] === Floor candidates (flat & wide renderers, top 20 by XZ area) ===");
+            var candidates = Object.FindObjectsOfType<Renderer>()
+                .Select(r => (r, b: r.bounds))
+                .Where(t => t.b.size.y < 2f && (t.b.size.x > 3f || t.b.size.z > 3f))
+                .OrderByDescending(t => t.b.size.x * t.b.size.z)
+                .Take(20);
+            foreach (var (r, b) in candidates)
+            {
+                var shaders = string.Join(",", r.sharedMaterials.Where(m => m != null && m.shader != null).Select(m => m.shader.name).Distinct());
+                sb.AppendLine($"  '{GetPath(r.transform)}' layer={r.gameObject.layer}({LayerMask.LayerToName(r.gameObject.layer)}) " +
+                               $"center={b.center} size={b.size} shaders=[{shaders}]");
+            }
+            Plugin.Log.Info(sb.ToString());
+        }
+
+        private static void DumpRenderSettings()
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("[SkyLight][diag] === RenderSettings ===");
+            sb.AppendLine($"  ambientMode={RenderSettings.ambientMode} ambientLight={RenderSettings.ambientLight} ambientIntensity={RenderSettings.ambientIntensity}");
+            sb.AppendLine($"  fog={RenderSettings.fog} fogColor={RenderSettings.fogColor} fogMode={RenderSettings.fogMode}");
+            sb.AppendLine($"  skybox={(RenderSettings.skybox == null ? "null" : RenderSettings.skybox.shader.name)}");
+            Plugin.Log.Info(sb.ToString());
+        }
+
+        private static void DumpCameras()
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("[SkyLight][diag] === Cameras (all, incl. inactive) ===");
+            // 非アクティブ含め全カメラを列挙（デスクトップ/Smooth/VR/CameraPlus などを把握する）
+            var cams = Resources.FindObjectsOfTypeAll<Camera>();
+            foreach (var cam in cams.OrderByDescending(c => c.depth))
+            {
+                bool sceneObj = cam.gameObject.scene.IsValid(); // プレハブ資産でなく実シーン上か
+                sb.AppendLine(
+                    $"  '{GetPath(cam.transform)}' enabled={cam.enabled} activeInHierarchy={cam.gameObject.activeInHierarchy} " +
+                    $"sceneObj={sceneObj} clearFlags={cam.clearFlags} bg={cam.backgroundColor} depth={cam.depth} " +
+                    $"tag={cam.tag} targetTex={(cam.targetTexture != null)} cullingMask=0x{cam.cullingMask:X}");
+            }
+            Plugin.Log.Info(sb.ToString());
+        }
+
+        private static void DumpShaderInventory()
+        {
+            // アクティブな Renderer が使っているシェーダー名を集計する。
+            // 標準シェーダー(Standard 等)が多ければ ambient が効く余地あり。unlit/custom ばかりなら効かない。
+            var counts = new Dictionary<string, int>();
+            foreach (var r in Object.FindObjectsOfType<Renderer>())
+            {
+                foreach (var m in r.sharedMaterials)
+                {
+                    if (m == null || m.shader == null) continue;
+                    string name = m.shader.name;
+                    counts[name] = counts.TryGetValue(name, out int n) ? n + 1 : 1;
+                }
+            }
+
+            var sb = new StringBuilder();
+            sb.AppendLine($"[SkyLight][diag] === Shader inventory (active renderers, {counts.Count} distinct) ===");
+            foreach (var kv in counts.OrderByDescending(k => k.Value).Take(40))
+                sb.AppendLine($"  {kv.Value,4}x  {kv.Key}");
+            Plugin.Log.Info(sb.ToString());
+        }
+
+        private static void ProbeSkyboxShaders()
+        {
+            // どのスカイボックス/塗り潰し用シェーダーがビルドに含まれているかを確認する。
+            string[] candidates =
+            {
+                "Skybox/Procedural", "Skybox/Cubemap", "Skybox/6 Sided", "Skybox/Panoramic",
+                "Mobile/Skybox", "Standard", "Unlit/Color", "Unlit/Texture",
+                "Sprites/Default", "UI/Default", "Hidden/Internal-Colored",
+            };
+            var sb = new StringBuilder();
+            sb.AppendLine("[SkyLight][diag] === Shader.Find probe ===");
+            foreach (var name in candidates)
+                sb.AppendLine($"  {(Shader.Find(name) != null ? "OK  " : "MISS")}  {name}");
+            Plugin.Log.Info(sb.ToString());
+        }
+
+        private static string GetPath(Transform t)
+        {
+            var stack = new Stack<string>();
+            for (var cur = t; cur != null; cur = cur.parent) stack.Push(cur.name);
+            return string.Join("/", stack);
+        }
+    }
+}

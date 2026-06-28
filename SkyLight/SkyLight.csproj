@@ -1,0 +1,101 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>SkyLight</AssemblyName>
+    <RootNamespace>SkyLight</RootNamespace>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Deterministic>true</Deterministic>
+    <!-- 実際にプレイ・デプロイする Beat Saber インストール。環境変数 BeatSaberPath で上書き可能 -->
+    <BeatSaberPath Condition="'$(BeatSaberPath)' == ''">D:\BSManager\BSInstances\1.40.8</BeatSaberPath>
+    <BeatSaberManagedPath>$(BeatSaberPath)\Beat Saber_Data\Managed</BeatSaberManagedPath>
+    <BeatSaberPluginsPath>$(BeatSaberPath)\Plugins</BeatSaberPluginsPath>
+    <!-- BSIPA / SiraUtil / BSML の同梱コピーは LRCounter の externals を流用する -->
+    <BundledDepsDir>$(MSBuildThisFileDirectory)..\..\LRCounter\externals\extracted</BundledDepsDir>
+    <OutputPath>bin\$(Configuration)\$(TargetFramework)\</OutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Unity（RenderSettings / Material / Shader / Color はここ） -->
+    <Reference Include="UnityEngine">
+      <HintPath>$(BeatSaberManagedPath)\UnityEngine.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(BeatSaberManagedPath)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.PhysicsModule">
+      <HintPath>$(BeatSaberManagedPath)\UnityEngine.PhysicsModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+
+    <!-- BSML 設定UIの基底型(ViewController)に必要 -->
+    <Reference Include="HMUI">
+      <HintPath>$(BeatSaberManagedPath)\HMUI.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="BeatSaber.ViewSystem">
+      <HintPath>$(BeatSaberManagedPath)\BeatSaber.ViewSystem.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+
+    <!-- Newtonsoft.Json（プリセットの保存/読込に使用。Beat Saber 同梱版を参照） -->
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>$(BeatSaberManagedPath)\Newtonsoft.Json.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>False</SpecificVersion>
+    </Reference>
+
+    <!-- IPA / BSIPA -->
+    <Reference Include="IPA">
+      <HintPath>$(BundledDepsDir)\bsipa\IPA\Data\Managed\IPA.Loader.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>False</SpecificVersion>
+    </Reference>
+
+    <!-- Harmony -->
+    <Reference Include="0Harmony">
+      <HintPath>$(BundledDepsDir)\bsipa\IPA\Libs\0Harmony.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>False</SpecificVersion>
+    </Reference>
+
+    <!-- BSML -->
+    <Reference Include="BSML">
+      <HintPath Condition="Exists('$(BeatSaberPluginsPath)\BSML.dll')">$(BeatSaberPluginsPath)\BSML.dll</HintPath>
+      <HintPath Condition="!Exists('$(BeatSaberPluginsPath)\BSML.dll')">$(BundledDepsDir)\bsml\Plugins\BSML.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>False</SpecificVersion>
+    </Reference>
+
+    <!-- SiraUtil -->
+    <Reference Include="SiraUtil">
+      <HintPath Condition="Exists('$(BeatSaberPluginsPath)\SiraUtil.dll')">$(BeatSaberPluginsPath)\SiraUtil.dll</HintPath>
+      <HintPath Condition="!Exists('$(BeatSaberPluginsPath)\SiraUtil.dll')">$(BundledDepsDir)\sirautil\Plugins\SiraUtil.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>False</SpecificVersion>
+    </Reference>
+
+    <!-- Zenject -->
+    <Reference Include="Zenject">
+      <HintPath>$(BeatSaberManagedPath)\Zenject.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>False</SpecificVersion>
+    </Reference>
+    <Reference Include="Zenject-usage">
+      <HintPath>$(BeatSaberManagedPath)\Zenject-usage.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>False</SpecificVersion>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- BSML リソースとして埋め込む -->
+    <EmbeddedResource Include="Views\*.bsml" />
+    <EmbeddedResource Include="manifest.json" />
+  </ItemGroup>
+
+</Project>
