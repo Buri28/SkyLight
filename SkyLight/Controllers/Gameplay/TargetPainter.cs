@@ -21,6 +21,7 @@ namespace SkyLight.Controllers.Gameplay
         private bool _colorize = true;
         private bool _assigned;        // 単色マテリアルを各レンダラーへ代入済みか
         private bool _clonesAssigned;  // 複製マテリアルを代入済みか
+        private Color _lastColor = new Color(-1f, -1f, -1f, -1f); // 直近に適用した色（変化なしなら何もしない）
         private readonly bool _alwaysReassign; // 毎フレーム再代入する（ミラー等が戻してくる対象向け。対象数が少ない床用）
         private readonly HashSet<int> _ids = new(); // 収集済みレンダラーの InstanceID（増分収集の重複防止）
         private int _emptyRefreshes;   // 連続で「新規ゼロ」だった Refresh 回数
@@ -38,6 +39,7 @@ namespace SkyLight.Controllers.Gameplay
             _ids.Clear();
             _assigned = false;
             _clonesAssigned = false;
+            _lastColor = new Color(-1f, -1f, -1f, -1f);
             _emptyRefreshes = 0;
             _refreshSettled = false;
 
@@ -121,6 +123,13 @@ namespace SkyLight.Controllers.Gameplay
 
         public void Apply(Color rgba)
         {
+            // 何も変わっていなければ完全に何もしない（毎フレーム呼ばれても実質ゼロコスト）。
+            // alwaysReassign（床=ミラーが戻す）と、色が変わったとき、新規収集直後だけ実処理する。
+            bool done = _colorize ? _assigned : _clonesAssigned;
+            if (done && !_alwaysReassign && rgba == _lastColor)
+                return;
+            _lastColor = rgba;
+
             foreach (var (b, _) in _disabledMirrors)
                 if (b != null && b.enabled) b.enabled = false;
 
@@ -130,7 +139,7 @@ namespace SkyLight.Controllers.Gameplay
                 return;
             }
 
-            EnsureMaterial(rgba);   // 色は毎回ここで更新（_mat は共有なので安い）
+            EnsureMaterial(rgba);   // 色を更新（_mat は共有なので安い）
             if (_mat == null) return;
 
             // マテリアル配列の代入は初回だけ（毎フレーム代入すると重い／GCが走る）。
@@ -216,6 +225,7 @@ namespace SkyLight.Controllers.Gameplay
             _ids.Clear();
             _assigned = false;
             _clonesAssigned = false;
+            _lastColor = new Color(-1f, -1f, -1f, -1f);
             _emptyRefreshes = 0;
             _refreshSettled = false;
             _logged = false;

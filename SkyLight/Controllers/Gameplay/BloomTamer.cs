@@ -60,13 +60,27 @@ namespace SkyLight.Controllers.Gameplay
             if (!_active) return;
             if (disableBloom)
             {
+                // カメラの MainEffectController.enabled を false にする。ON/OFF は毎フレーム強制。
                 foreach (var (b, _) in _mainEffectTargets)
-                    if (b != null) b.enabled = false;
+                {
+                    if (b != null)
+                    {
+                        b.enabled = false;  
+                        Plugin.DebugLog($"[SkyLight][bloomtamer] disabling {b.name} (was enabled={b.enabled})");
+                    } 
+                }
             }
             else if (!_everApplied || _lastDisable)
             {
+                // カメラの MainEffectController.enabled を true に戻す。ON/OFF は毎フレーム強制。
                 foreach (var (b, _) in _mainEffectTargets)
-                    if (b != null) b.enabled = true;
+                {
+                    if (b != null)
+                    {
+                        b.enabled = true;
+                        Plugin.DebugLog($"[SkyLight][bloomtamer] enabling {b.name} (was enabled={b.enabled})");
+                    }
+                }
             }
             _everApplied = true;
             _lastDisable = disableBloom;
