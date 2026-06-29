@@ -30,6 +30,9 @@ namespace SkyLight.Controllers.Gameplay
         private bool _active;
         private int _frame;
 
+        private bool _isFirstApply = false;
+
+
         // 触ったカメラの元 clearFlags / 背景色（復元用）。MainCamera はシーンをまたいで生き残るため必ず戻す。
         private readonly Dictionary<Camera, (CameraClearFlags flags, Color bg)> _origCameras = new();
         private Camera? _mainCamCache; // 反射用にメインカメラ背景色を設定する対象（1回探索してキャッシュ）
@@ -78,11 +81,22 @@ namespace SkyLight.Controllers.Gameplay
             _frame++;
 
             // 空/床/リング/Bloom のモードを毎フレーム適用（構造変化時のみ作り直し、色は毎フレーム維持）。
-            ApplyMode();
+            _bloomTamer.Reassert(!(_config.Bloom && !_config.RecolorBackground)); 
+
+            if (!_isFirstApply && _frame % 60 == 0)
+            {
+                // クオリティ設定確定後に MainEffectController の実体が遅れて生成されることがあるため、あとから設定
+                // 1度だけ ApplyMode() を呼ぶ。毎フレームは重いので避ける。
+                // 起動時が一番重いため、できるだけ起動時の重い処理は避けないとFPSが落ちる
+                ApplyMode();
+                _isFirstApply = true;
+            }
 
             // クオリティ設定確定後に MainEffectController の実体が遅れて生成されることがあるため、定期再収集。
-            if (_frame % 60 == 0)
-                _bloomTamer.Refresh();
+            // if (_frame % 300 == 0) {
+                // ApplyMode();
+                // _bloomTamer.Refresh();
+            // }
         }
 
         // ─── 着色の適用（全対象 半透明＝B方式） ───────────────────────────
