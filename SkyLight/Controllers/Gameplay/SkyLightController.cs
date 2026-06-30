@@ -13,7 +13,7 @@ namespace SkyLight.Controllers.Gameplay
     /// CustomPlatforms は非同期にプラットフォームをロードし、その際 RenderSettings を上書きしうるため、
     /// 既定では毎フレーム再適用してこちらの設定で確実に「勝つ」。
     /// </summary>
-    public class SkyLightController : IInitializable, ITickable, ILateTickable, IDisposable
+    public class SkyLightController : IInitializable, ILateTickable, IDisposable
     {
         private readonly PluginConfig _config;
 
@@ -58,45 +58,29 @@ namespace SkyLight.Controllers.Gameplay
 
             _bloomTamer.Capture();
 
-            // 空/床/リングの選択と Bloom の関係に応じて、ドーム・床・リング・ブルームをまとめて適用する。
-            ApplyMode();
-
-            Apply();
+            // 起動時は軽い処理だけ（カメラ背景＝反射床の色）。重い塗り(ApplyMode)は起動が落ち着く約1秒後に回す。
+            ApplyCameraBackground();
             _active = true;
-            Plugin.DebugLog("[SkyLight] Applied RenderSettings on gameplay scene.");
+            Plugin.DebugLog("[SkyLight] Applied on gameplay scene (paint deferred to ~1s).");
         }
 
-        // CustomPlatforms 等が後から RenderSettings を上書きしても、毎フレーム上書きし返す。
-        public void Tick()
-        {
-            if (!_active) return;
-            Apply();
-        }
-
-        // 背景の差し替え保証は LateTick（通常の Update 後）で行い、環境のライティング更新に勝つ。
+        // LateTick（Update 後・描画前）。毎フレームは軽い2つだけ：
+        //   ・Bloom の強制OFF維持（ライト演出で再有効化されても白飛びさせない）
+        //   ・カメラ背景の維持（反射床の色。キャッシュ済みで変化時のみ代入＝ほぼ無コスト）
+        // 重い塗り（ApplyMode：FindObjectsOfType を含む）は、対象が出揃う約1秒後に1回だけ実行する。
         public void LateTick()
         {
             if (!_active) return;
-
             _frame++;
 
-            // 空/床/リング/Bloom のモードを毎フレーム適用（構造変化時のみ作り直し、色は毎フレーム維持）。
-            _bloomTamer.Reassert(!(_config.Bloom && !_config.RecolorBackground)); 
+            _bloomTamer.Reassert(!(_config.Bloom && !_config.RecolorBackground));
+            ApplyCameraBackground();
 
             if (!_isFirstApply && _frame % 60 == 0)
             {
-                // クオリティ設定確定後に MainEffectController の実体が遅れて生成されることがあるため、あとから設定
-                // 1度だけ ApplyMode() を呼ぶ。毎フレームは重いので避ける。
-                // 起動時が一番重いため、できるだけ起動時の重い処理は避けないとFPSが落ちる
-                ApplyMode();
+                ApplyMode(); // 後から出現する対象（リング等）も拾って塗る
                 _isFirstApply = true;
             }
-
-            // クオリティ設定確定後に MainEffectController の実体が遅れて生成されることがあるため、定期再収集。
-            // if (_frame % 300 == 0) {
-                // ApplyMode();
-                // _bloomTamer.Refresh();
-            // }
         }
 
         // ─── 着色の適用（全対象 半透明＝B方式） ───────────────────────────
@@ -112,10 +96,8 @@ namespace SkyLight.Controllers.Gameplay
 
         private void ApplyMode()
         {
-            // Sky Background ON の間は Bloom を強制OFFにして背景ドームを表示する。
+            // Bloom の強制OFFは LateTick が毎フレーム行うのでここでは触らない。
             bool bloomOn = _config.Bloom && !_config.RecolorBackground;
-            _bloomTamer.Reassert(!bloomOn);
-
             bool useBackdrop = _config.RecolorBackground;
 
             // 背景ドーム。Sky Background ON 時に元背景を置き換える。
@@ -134,6 +116,9 @@ namespace SkyLight.Controllers.Gameplay
             {
                 _backdrop.Reassert();
                 _backdrop.SetColor(GetDomeColor());
+                // 黒い虚無の保険塗り（ドームが覆うので1回でよい）。
+                if (_config.FillBackground)
+                    FillCameraBackgrounds();
             }
 
             // 床の色は FloorColor。塗り方が Bloom で違う：
@@ -225,23 +210,15 @@ namespace SkyLight.Controllers.Gameplay
 
         // ─── 適用 / 退避 / 復元 ────────────────────────────────────────────
 
-        private void Apply()
+        // 毎フレーム呼ばれる軽い処理。Bloom ON のときだけ、ミラーが映すメインカメラ背景色を FloorColor に保つ。
+        // （clearFlags は変えない＝直接背景はそのまま＝白飛びしない。反射カメラが CopyFrom で引き継いで床に映す）
+        // メインカメラ背景はキャッシュ済みで「色が変わったときだけ代入」なので実質ゼロコスト。
+        // Bloom OFF（空ドーム）側のカメラ塗りつぶしは空ドームが背景を覆うので毎フレーム不要 → ApplyMode で1回行う。
+        private void ApplyCameraBackground()
         {
             bool bloomOn = _config.Bloom && !_config.RecolorBackground;
-            if (bloomOn)
-            {
-                // Bloom ON：ミラーが映す背景＝メインカメラの backgroundColor を FloorColor にする。
-                // clearFlags は変えない（Skybox のまま＝直接の背景は元のまま＝白飛びしない）。
-                // 反射カメラは CopyFrom(メインカメラ) で backgroundColor を引き継ぎ SolidColor でクリアするので、床に FloorColor が映る。
-                if (_config.PaintFloor)
-                    SetMainCameraBackgroundColor(MakeColor(_config.FloorColor, _config.FloorBrightness, 1f, new Color(0.13f, 0.16f, 0.19f)));
-            }
-            else
-            {
-                // Bloom OFF：Sky Background ON のときはカメラ背景を空色で塗る（空ドーム用）。
-                if (_config.FillBackground && _config.RecolorBackground)
-                    FillCameraBackgrounds();
-            }
+            if (bloomOn && _config.PaintFloor)
+                SetMainCameraBackgroundColor(MakeColor(_config.FloorColor, _config.FloorBrightness, 1f, new Color(0.13f, 0.16f, 0.19f)));
         }
 
         // メインカメラの backgroundColor だけを設定（clearFlags は据え置き）。反射カメラがこれを引き継いで床に映す。
