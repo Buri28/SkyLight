@@ -42,7 +42,7 @@ namespace SkyLight.Controllers.Gameplay
                 _emptyRefreshes = 0;
                 if (logIfChanged && !_logged)
                 {
-                    Plugin.Log.Info($"[SkyLight][bloomtamer] MainEffectController instances: {_mainEffectTargets.Count}");
+                    Plugin.DebugInfo(() => $"[SkyLight][bloomtamer] MainEffectController instances: {_mainEffectTargets.Count}");
                     _logged = true;
                 }
             }

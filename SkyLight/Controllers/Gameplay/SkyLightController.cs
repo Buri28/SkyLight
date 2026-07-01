@@ -22,9 +22,10 @@ namespace SkyLight.Controllers.Gameplay
         // 全画面ブルームの ON/OFF。
         private readonly BloomTamer _bloomTamer = new();
         // 床：Bloom ON は FloorColor を反射ドームに塗って反射、Bloom OFF はフラット塗り。
-        private readonly TargetPainter _floorFlat = new("floor", alwaysReassign: true);
-        // 構造物・リングは半透明で着色するペインター。
-        private readonly TargetPainter _structures = new("struct");
+        private readonly TargetPainter _floorFlat = new("floor", alwaysReassign: true, writeDepth: true);
+        // 構造物・バー・リングは半透明で着色するペインター。
+        private readonly TargetPainter _structures = new("struct", excludeFloorLike: true);
+        private readonly TargetPainter _bars = new("bars");
         private readonly TargetPainter _ring = new("ring");
 
         private bool _active;
@@ -36,6 +37,8 @@ namespace SkyLight.Controllers.Gameplay
         // 触ったカメラの元 clearFlags / 背景色（復元用）。MainCamera はシーンをまたいで生き残るため必ず戻す。
         private readonly Dictionary<Camera, (CameraClearFlags flags, Color bg)> _origCameras = new();
         private Camera? _mainCamCache; // 反射用にメインカメラ背景色を設定する対象（1回探索してキャッシュ）
+        private int _neonLayer = -1;   // NeonLight レイヤー番号（1回解決）
+        private readonly Dictionary<Camera, int> _neonCamMasks = new(); // ネオン非表示で変更したカメラの元 cullingMask
 
         [Inject]
         public SkyLightController(PluginConfig config)
@@ -92,6 +95,7 @@ namespace SkyLight.Controllers.Gameplay
         private int _floorMode; // 0=Bloom ONでカメラ背景に映す / 1=Bloom OFFでフラット塗り
         private bool _floorPainted;
         private bool _structPainted;
+        private bool _barsPainted;
         private bool _ringPainted;
 
         private void ApplyMode()
@@ -124,30 +128,62 @@ namespace SkyLight.Controllers.Gameplay
             // 床の色は FloorColor。塗り方が Bloom で違う：
             //  ① Bloom ON  → メインカメラの backgroundColor を FloorColor にする（ミラーが反射＝床に映る・直接背景は据え置きで白飛びしない）。Apply() で処理。
             //  ② Bloom OFF → 床に直接フラット塗り。
-            int wantFloorMode = (_config.PaintFloor && !bloomOn) ? 1 : 0;
+            int wantFloorMode = (_config.PaintFloor && _config.ShowFloor && !bloomOn) ? 1 : 0;
             if (wantFloorMode != _floorMode)
             {
                 _floorFlat.Restore();
                 _floorPainted = false;
                 _floorMode = wantFloorMode;
             }
-            if (_floorMode == 1)
-            {
-                UpdateTarget(_floorFlat, true, ref _floorPainted,
-                    _config.FloorPaintShaderHint, "", disableMirror: true, colorize: true,
-                    MakeColor(_config.FloorColor, _config.FloorBrightness, _config.FloorAlpha, new Color(0.13f, 0.16f, 0.19f)));
-            }
+            UpdateFloorVisibility();
 
             // 構造物（名前/シェーダーヒントで対象、除外あり）。Colorize=false なら元の色のまま透明度だけ。
-            UpdateTarget(_structures, _config.PaintStructures, ref _structPainted,
-                _config.StructureShaderHints, _config.StructureExcludeHints, disableMirror: false,
+            UpdateTarget(_structures, _config.PaintStructures || !_config.ShowStructures, ref _structPainted,
+                _config.StructureShaderHints, GetEffectiveStructureExcludes(), disableMirror: false,
                 _config.StructureColorize,
                 MakeColor(_config.StructureColor, _config.StructureBrightness, _config.StructureAlpha, new Color(0.25f, 0.38f, 0.63f)));
+            if (_structPainted)
+                _structures.SetVisible(_config.ShowStructures);
+
+            // バー（Spectrogram）は表示/非表示だけを管理する。
+            UpdateBarVisibility();
 
             // リング。対象は RingShaderHints で指定（環境により "Ring" 名が無いため）。
-            UpdateTarget(_ring, _config.PaintRing, ref _ringPainted,
+            UpdateTarget(_ring, _config.PaintRing || !_config.ShowRing, ref _ringPainted,
                 GetEffectiveRingHints(), _config.RingExcludeHints, disableMirror: false, _config.RingColorize,
                 MakeColor(_config.RingColor, _config.RingBrightness, _config.RingAlpha, new Color(0.227f, 0.627f, 1f)));
+            if (_ringPainted)
+                _ring.SetVisible(_config.ShowRing);
+
+            // ネオン/レーザー(NeonLightレイヤー)の表示/非表示。横の動くネオンバー・水色ビームを消す。
+            ApplyNeonVisibility();
+        }
+
+        // NeonLight レイヤー(13)を全カメラの cullingMask から外す/戻す。BloomPrePass のネオンは色塗り不可なので、
+        // 描画対象から外して隠す。元のマスクは保存して Dispose で復元。
+        private void ApplyNeonVisibility()
+        {
+            if (_neonLayer < 0)
+                _neonLayer = LayerMask.NameToLayer("NeonLight");
+            if (_neonLayer < 0) return;
+            int bit = 1 << _neonLayer;
+
+            if (_config.HideNeon)
+            {
+                foreach (var cam in Camera.allCameras)
+                {
+                    if (cam == null) continue;
+                    if (!_neonCamMasks.ContainsKey(cam))
+                        _neonCamMasks[cam] = cam.cullingMask;
+                    cam.cullingMask &= ~bit;
+                }
+            }
+            else if (_neonCamMasks.Count > 0)
+            {
+                foreach (var kv in _neonCamMasks)
+                    if (kv.Key != null) kv.Key.cullingMask = kv.Value;
+                _neonCamMasks.Clear();
+            }
         }
 
         private void UpdateTarget(TargetPainter p, bool want, ref bool painted, string hints, string exclude, bool disableMirror, bool colorize, Color rgba)
@@ -185,6 +221,92 @@ namespace SkyLight.Controllers.Gameplay
             return hints.Length == 0 ? "Ring" : hints;
         }
 
+        private string GetEffectiveStructureExcludes()
+        {
+            return MergeHints(
+                _config.StructureExcludeHints,
+                "Mirror",
+                "Note",
+                "Saber",
+                "Arrow",
+                "Bomb",
+                "Skybox",
+                "BloomSkyboxQuad",
+                "Ring",
+                "TrackConstruction",
+                "Spectrogram",
+                "Floor",
+                "Runway",
+                "TrackLane",
+                "Lane",
+                "Road");
+        }
+
+        private string GetEffectiveBarHints()
+        {
+            var hints = (_config.BarShaderHints ?? string.Empty).Trim();
+            return hints.Length == 0 ? "Spectrogram" : hints;
+        }
+
+        private void UpdateBarVisibility()
+        {
+            if (!_barsPainted)
+            {
+                _bars.Collect(GetEffectiveBarHints(), _config.BarExcludeHints, disableMirror: false, colorize: true);
+                _barsPainted = true;
+            }
+            else if (_frame % TargetRefreshInterval == 0)
+            {
+                _bars.Refresh(GetEffectiveBarHints(), _config.BarExcludeHints, disableMirror: false);
+            }
+
+            _bars.SetVisible(_config.ShowBars);
+        }
+
+        private void UpdateFloorVisibility()
+        {
+            bool wantTracking = !_config.ShowFloor || _floorMode == 1;
+            if (wantTracking && !_floorPainted)
+            {
+                _floorFlat.Collect(_config.FloorPaintShaderHint, "", disableMirror: _floorMode == 1, colorize: true);
+                _floorPainted = true;
+            }
+            else if (!wantTracking && _floorPainted)
+            {
+                _floorFlat.Restore();
+                _floorPainted = false;
+            }
+
+            if (!_floorPainted) return;
+
+            _floorFlat.SetVisible(_config.ShowFloor);
+            if (_config.ShowFloor && _floorMode == 1)
+            {
+                _floorFlat.Apply(MakeColor(_config.FloorColor, _config.FloorBrightness, _config.FloorAlpha, new Color(0.13f, 0.16f, 0.19f)));
+            }
+        }
+
+        private static string MergeHints(string current, params string[] required)
+        {
+            var all = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var hint in (current ?? string.Empty).Split(';'))
+            {
+                var trimmed = hint.Trim();
+                if (trimmed.Length > 0)
+                    all.Add(trimmed);
+            }
+
+            foreach (var hint in required)
+            {
+                var trimmed = (hint ?? string.Empty).Trim();
+                if (trimmed.Length > 0)
+                    all.Add(trimmed);
+            }
+
+            return string.Join(";", all);
+        }
+
         public void Dispose()
         {
             if (_active)
@@ -194,11 +316,13 @@ namespace SkyLight.Controllers.Gameplay
             _bloomTamer.Restore();
             _floorFlat.Restore();
             _structures.Restore();
+            _bars.Restore();
             _ring.Restore();
             _domeBuilt = false;
             _floorMode = 0;
             _floorPainted = false;
             _structPainted = false;
+            _barsPainted = false;
             _ringPainted = false;
             GC.SuppressFinalize(this);
         }
@@ -217,7 +341,7 @@ namespace SkyLight.Controllers.Gameplay
         private void ApplyCameraBackground()
         {
             bool bloomOn = _config.Bloom && !_config.RecolorBackground;
-            if (bloomOn && _config.PaintFloor)
+            if (bloomOn && _config.PaintFloor && _config.ShowFloor)
                 SetMainCameraBackgroundColor(MakeColor(_config.FloorColor, _config.FloorBrightness, 1f, new Color(0.13f, 0.16f, 0.19f)));
         }
 
@@ -269,6 +393,12 @@ namespace SkyLight.Controllers.Gameplay
             }
             _origCameras.Clear();
             _mainCamCache = null;
+
+            // ネオン非表示で変更したカメラの cullingMask を元に戻す。
+            foreach (var kv in _neonCamMasks)
+                if (kv.Key != null) kv.Key.cullingMask = kv.Value;
+            _neonCamMasks.Clear();
+
             _active = false;
         }
     }

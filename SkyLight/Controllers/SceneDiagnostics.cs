@@ -16,6 +16,63 @@ namespace SkyLight.Controllers
             DumpShaderInventory();
             ProbeSkyboxShaders();
             DumpLargeFlatRenderers();
+            DumpTallRenderers();
+            DumpBuildingLikeRenderers();
+            DumpLights();
+        }
+
+        // 「ビル/柱/街」らしい名前のレンダラーを大小問わず全部列挙（黒バーの特定用）。
+        private static void DumpBuildingLikeRenderers()
+        {
+            string[] kw = { "Building", "Construction", "Column", "City", "Skyline", "Tower", "Block", "Pillar", "Box", "Cube", "Mesh", "Structure", "Spectrogram" };
+            var sb = new StringBuilder();
+            sb.AppendLine("[SkyLight][diag] === Building-like renderers (name match) ===");
+            foreach (var r in Object.FindObjectsOfType<Renderer>())
+            {
+                if (r == null) continue;
+                var path = GetPath(r.transform);
+                if (!kw.Any(k => path.IndexOf(k, System.StringComparison.OrdinalIgnoreCase) >= 0)) continue;
+                var shaders = string.Join(",", r.sharedMaterials.Where(m => m != null && m.shader != null).Select(m => m.shader.name).Distinct());
+                var b = r.bounds;
+                sb.AppendLine($"  '{path}' layer={r.gameObject.layer}({LayerMask.LayerToName(r.gameObject.layer)}) size=({b.size.x:0.#},{b.size.y:0.#},{b.size.z:0.#}) shaders=[{shaders}]");
+            }
+            Plugin.Log.Info(sb.ToString());
+        }
+
+        // 背の高い大きなレンダラー（横の動くビル等の特定用）。bounds の体積が大きい順に列挙。
+        private static void DumpTallRenderers()
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("[SkyLight][diag] === Tall renderers (top 40 by height, height>3) ===");
+            var candidates = Object.FindObjectsOfType<Renderer>()
+                .Where(r => r != null && r.bounds.size.y > 3f && r.bounds.size.y < 1000f)
+                .OrderByDescending(r => r.bounds.size.y)
+                .Take(40);
+            foreach (var r in candidates)
+            {
+                var b = r.bounds;
+                var shaders = string.Join(",", r.sharedMaterials.Where(m => m != null && m.shader != null).Select(m => m.shader.name).Distinct());
+                sb.AppendLine($"  '{GetPath(r.transform)}' layer={r.gameObject.layer}({LayerMask.LayerToName(r.gameObject.layer)}) " +
+                              $"size={b.size} shaders=[{shaders}]");
+            }
+            Plugin.Log.Info(sb.ToString());
+        }
+
+        // シーン内のライト（ノーツを照らす光源の特定用）。Directional/Point/Spot を色・強度・位置つきで列挙。
+        private static void DumpLights()
+        {
+            var sb = new StringBuilder();
+            var lights = Object.FindObjectsOfType<Light>();
+            sb.AppendLine($"[SkyLight][diag] === Lights ({lights.Length}) ===");
+            foreach (var l in lights.OrderByDescending(l => l.intensity))
+            {
+                if (l == null) continue;
+                var c = l.color;
+                sb.AppendLine($"  '{GetPath(l.transform)}' type={l.type} enabled={l.enabled} intensity={l.intensity:0.##} " +
+                              $"range={l.range:0.#} color=RGBA({c.r:0.##},{c.g:0.##},{c.b:0.##},{c.a:0.##}) " +
+                              $"layer={l.gameObject.layer}({LayerMask.LayerToName(l.gameObject.layer)}) cullingMask=0x{l.cullingMask:X}");
+            }
+            Plugin.Log.Info(sb.ToString());
         }
 
         // CustomPlatforms 環境では本物の床(Mirror)がプラットフォーム自身のメッシュに隠れて見えないことがあるため、

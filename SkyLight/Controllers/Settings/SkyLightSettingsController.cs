@@ -67,6 +67,13 @@ namespace SkyLight.Controllers.Settings
             set { _config.PaintFloor = value; _config.Changed(); }
         }
 
+        [UIValue("show-floor")]
+        public bool ShowFloor
+        {
+            get => _config.ShowFloor;
+            set { _config.ShowFloor = value; _config.Changed(); }
+        }
+
         [UIValue("floor-color")]
         public Color FloorColor
         {
@@ -93,6 +100,13 @@ namespace SkyLight.Controllers.Settings
         {
             get => _config.PaintStructures;
             set { _config.PaintStructures = value; _config.Changed(); }
+        }
+
+        [UIValue("show-structures")]
+        public bool ShowStructures
+        {
+            get => _config.ShowStructures;
+            set { _config.ShowStructures = value; _config.Changed(); }
         }
 
         [UIValue("structure-colorize")]
@@ -123,6 +137,13 @@ namespace SkyLight.Controllers.Settings
             set { _config.StructureAlpha = value; _config.Changed(); }
         }
 
+        [UIValue("show-bars")]
+        public bool ShowBars
+        {
+            get => _config.ShowBars;
+            set { _config.ShowBars = value; _config.Changed(); }
+        }
+
         [UIValue("background-layer")]
         public int BackgroundLayer
         {
@@ -137,6 +158,13 @@ namespace SkyLight.Controllers.Settings
             set { _config.Bloom = value; _config.Changed(); }
         }
 
+        [UIValue("show-neon")]
+        public bool ShowNeon
+        {
+            get => !_config.HideNeon;
+            set { _config.HideNeon = !value; _config.Changed(); }
+        }
+
         [UIValue("paint-ring")]
         public bool PaintRing
         {
@@ -144,11 +172,11 @@ namespace SkyLight.Controllers.Settings
             set { _config.PaintRing = value; _config.Changed(); }
         }
 
-        [UIValue("ring-hints")]
-        public string RingShaderHints
+        [UIValue("show-ring")]
+        public bool ShowRing
         {
-            get => _config.RingShaderHints;
-            set { _config.RingShaderHints = value; _config.Changed(); }
+            get => _config.ShowRing;
+            set { _config.ShowRing = value; _config.Changed(); }
         }
 
         [UIValue("ring-colorize")]
@@ -193,15 +221,21 @@ namespace SkyLight.Controllers.Settings
             _config.BackgroundBrightness = d.BackgroundBrightness;
             _config.BackgroundLayer = d.BackgroundLayer;
             _config.Bloom = d.Bloom;
+            _config.HideNeon = d.HideNeon;
+            _config.ShowFloor = d.ShowFloor;
             _config.PaintFloor = d.PaintFloor;
             _config.FloorColor = d.FloorColor;
             _config.FloorBrightness = d.FloorBrightness;
             _config.FloorAlpha = d.FloorAlpha;
+            _config.ShowStructures = d.ShowStructures;
             _config.PaintStructures = d.PaintStructures;
             _config.StructureColorize = d.StructureColorize;
             _config.StructureColor = d.StructureColor;
             _config.StructureBrightness = d.StructureBrightness;
             _config.StructureAlpha = d.StructureAlpha;
+            _config.ShowBars = d.ShowBars;
+            _config.BarShaderHints = d.BarShaderHints;
+            _config.ShowRing = d.ShowRing;
             _config.PaintRing = d.PaintRing;
             _config.RingShaderHints = d.RingShaderHints;
             _config.RingColorize = d.RingColorize;
@@ -222,17 +256,21 @@ namespace SkyLight.Controllers.Settings
             NotifyPropertyChanged(nameof(BackgroundBrightness));
             NotifyPropertyChanged(nameof(BackgroundLayer));
             NotifyPropertyChanged(nameof(Bloom));
+            NotifyPropertyChanged(nameof(ShowNeon));
+            NotifyPropertyChanged(nameof(ShowFloor));
             NotifyPropertyChanged(nameof(PaintFloor));
             NotifyPropertyChanged(nameof(FloorColor));
             NotifyPropertyChanged(nameof(FloorBrightness));
             NotifyPropertyChanged(nameof(FloorAlpha));
+            NotifyPropertyChanged(nameof(ShowStructures));
             NotifyPropertyChanged(nameof(PaintStructures));
             NotifyPropertyChanged(nameof(StructureColorize));
             NotifyPropertyChanged(nameof(StructureColor));
             NotifyPropertyChanged(nameof(StructureBrightness));
             NotifyPropertyChanged(nameof(StructureAlpha));
+            NotifyPropertyChanged(nameof(ShowBars));
+            NotifyPropertyChanged(nameof(ShowRing));
             NotifyPropertyChanged(nameof(PaintRing));
-            NotifyPropertyChanged(nameof(RingShaderHints));
             NotifyPropertyChanged(nameof(RingColorize));
             NotifyPropertyChanged(nameof(RingColor));
             NotifyPropertyChanged(nameof(RingBrightness));

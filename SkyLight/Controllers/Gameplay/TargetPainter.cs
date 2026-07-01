@@ -15,6 +15,7 @@ namespace SkyLight.Controllers.Gameplay
         private readonly List<(Renderer renderer, Material[] original)> _painted = new();
         // 反射床(Mirror)は描画直前に自前マテリアルへ戻すので、対象なら Mirror 系コンポーネントを無効化する。
         private readonly List<(Behaviour b, bool origEnabled)> _disabledMirrors = new();
+        private readonly List<(Renderer renderer, bool origEnabled)> _hiddenRenderers = new();
         // 透明度だけモード（colorize=false）：元マテリアルを複製し、半透明化して色は元のまま残す。
         private readonly List<(Renderer renderer, Material[] clones)> _cloned = new();
         private Material? _mat;
@@ -23,12 +24,20 @@ namespace SkyLight.Controllers.Gameplay
         private bool _clonesAssigned;  // 複製マテリアルを代入済みか
         private Color _lastColor = new Color(-1f, -1f, -1f, -1f); // 直近に適用した色（変化なしなら何もしない）
         private readonly bool _alwaysReassign; // 毎フレーム再代入する（ミラー等が戻してくる対象向け。対象数が少ない床用）
+        private readonly bool _excludeFloorLike; // 構造物判定から床状の広い平面を除外する
+        private readonly bool _writeDepth; // 床のように後ろへ色が抜けないよう深度を書き込む
         private readonly HashSet<int> _ids = new(); // 収集済みレンダラーの InstanceID（増分収集の重複防止）
         private int _emptyRefreshes;   // 連続で「新規ゼロ」だった Refresh 回数
         private bool _refreshSettled;  // 対象が出揃ったら探索(FindObjectsOfType)を止める
         private bool _logged;
 
-        public TargetPainter(string tag, bool alwaysReassign = false) { _tag = tag; _alwaysReassign = alwaysReassign; }
+        public TargetPainter(string tag, bool alwaysReassign = false, bool excludeFloorLike = false, bool writeDepth = false)
+        {
+            _tag = tag;
+            _alwaysReassign = alwaysReassign;
+            _excludeFloorLike = excludeFloorLike;
+            _writeDepth = writeDepth;
+        }
 
         // hints / excludeHints: ';' 区切り。名前 または シェーダー名に部分一致で対象/除外。
         // colorize=true: 単色（rgba）で塗る。false: 元の色を残し透明度(rgba.a)だけ下げる。
@@ -82,8 +91,11 @@ namespace SkyLight.Controllers.Gameplay
                 _assigned = false;
                 _clonesAssigned = false;
                 _emptyRefreshes = 0;
-                var added = _painted.Skip(before).Take(8).Select(p => p.renderer != null ? p.renderer.gameObject.name : "?");
-                Plugin.Log.Info($"[SkyLight][{_tag}] refresh added {_painted.Count - before} (total {_painted.Count}) names=[{string.Join(", ", added)}]");
+                Plugin.DebugInfo(() =>
+                {
+                    var added = _painted.Skip(before).Take(8).Select(p => p.renderer != null ? p.renderer.gameObject.name : "?");
+                    return $"[SkyLight][{_tag}] refresh added {_painted.Count - before} (total {_painted.Count}) names=[{string.Join(", ", added)}]";
+                });
             }
             else if (++_emptyRefreshes >= 6)
             {
@@ -105,7 +117,9 @@ namespace SkyLight.Controllers.Gameplay
             bool excluded = exArr.Any(h => name.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0
                                            || path.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0
                                            || shaders.Any(s => s.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0));
-            return !excluded;
+            if (excluded) return false;
+            if (_excludeFloorLike && IsFloorLike(r)) return false;
+            return true;
         }
 
         private void DisableMirrorsOn(Renderer r, bool disableMirror)
@@ -135,7 +149,7 @@ namespace SkyLight.Controllers.Gameplay
 
             if (!_colorize)
             {
-                ApplyKeepOriginal(Mathf.Clamp01(rgba.a));
+                ApplyKeepOriginal(rgba, tint: false);
                 return;
             }
 
@@ -155,9 +169,28 @@ namespace SkyLight.Controllers.Gameplay
             _assigned = true;
         }
 
+        public void SetVisible(bool visible)
+        {
+            if (visible)
+            {
+                foreach (var (renderer, origEnabled) in _hiddenRenderers)
+                    if (renderer != null) renderer.enabled = origEnabled;
+                _hiddenRenderers.Clear();
+                return;
+            }
+
+            foreach (var (renderer, _) in _painted)
+            {
+                if (renderer == null) continue;
+                if (_hiddenRenderers.Any(h => h.renderer == renderer)) continue;
+                _hiddenRenderers.Add((renderer, renderer.enabled));
+                renderer.enabled = false;
+            }
+        }
+
         // 元の色・テクスチャを残したまま、マテリアルを複製して半透明化する（透明度だけモード）。
         // シェーダーがアルファ合成に対応していれば透ける（対応しないシェーダーでは効果が出ないことがある）。
-        private void ApplyKeepOriginal(float alpha)
+        private void ApplyKeepOriginal(Color rgba, bool tint)
         {
             // 初回だけ複製を作る。
             if (_cloned.Count == 0)
@@ -189,7 +222,14 @@ namespace SkyLight.Controllers.Gameplay
                 {
                     if (c == null || !c.HasProperty("_Color")) continue;
                     var col = c.GetColor("_Color");
-                    col.a = alpha;
+                    if (tint)
+                    {
+                        col = rgba;
+                    }
+                    else
+                    {
+                        col.a = Mathf.Clamp01(rgba.a);
+                    }
                     c.SetColor("_Color", col);
                 }
             }
@@ -211,6 +251,10 @@ namespace SkyLight.Controllers.Gameplay
             foreach (var (renderer, original) in _painted)
                 if (renderer != null) renderer.sharedMaterials = original;
             _painted.Clear();
+
+            foreach (var (renderer, origEnabled) in _hiddenRenderers)
+                if (renderer != null) renderer.enabled = origEnabled;
+            _hiddenRenderers.Clear();
 
             foreach (var (renderer, clones) in _cloned)
                 foreach (var c in clones)
@@ -247,20 +291,23 @@ namespace SkyLight.Controllers.Gameplay
             _mat.SetInt("_SrcBlend", (int)BlendMode.SrcAlpha);
             _mat.SetInt("_DstBlend", (int)BlendMode.OneMinusSrcAlpha);
             _mat.SetInt("_Cull", (int)CullMode.Off);
-            _mat.SetInt("_ZWrite", 0);
+            _mat.SetInt("_ZWrite", _writeDepth ? 1 : 0);
             _mat.renderQueue = (int)RenderQueue.Transparent;
         }
 
         private void LogOnce()
         {
             if (_logged) return;
-            var names = string.Join(", ", _painted.Take(12).Select(p =>
+            Plugin.DebugInfo(() =>
             {
-                if (p.renderer == null) return "?";
-                var sh = p.renderer.sharedMaterial != null && p.renderer.sharedMaterial.shader != null ? p.renderer.sharedMaterial.shader.name : "?";
-                return $"{GetPath(p.renderer.transform)}<{sh}>";
-            }));
-            Plugin.Log.Info($"[SkyLight][{_tag}] painted renderers found: {_painted.Count}, mirrors disabled: {_disabledMirrors.Count} names=[{names}]");
+                var names = string.Join(", ", _painted.Take(12).Select(p =>
+                {
+                    if (p.renderer == null) return "?";
+                    var sh = p.renderer.sharedMaterial != null && p.renderer.sharedMaterial.shader != null ? p.renderer.sharedMaterial.shader.name : "?";
+                    return $"{GetPath(p.renderer.transform)}<{sh}>";
+                }));
+                return $"[SkyLight][{_tag}] painted renderers found: {_painted.Count}, mirrors disabled: {_disabledMirrors.Count} names=[{names}]";
+            });
             _logged = true;
         }
 
@@ -272,6 +319,12 @@ namespace SkyLight.Controllers.Gameplay
             var stack = new Stack<string>();
             for (var cur = t; cur != null; cur = cur.parent) stack.Push(cur.name);
             return string.Join("/", stack);
+        }
+
+        private static bool IsFloorLike(Renderer r)
+        {
+            var size = r.bounds.size;
+            return size.y < 2f && (size.x > 3f || size.z > 3f);
         }
     }
 }

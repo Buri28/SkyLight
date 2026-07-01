@@ -29,6 +29,16 @@ namespace SkyLight
                 Log.Debug(message);
         }
 
+        internal static bool IsDebugLoggingEnabled()
+            => Config != null && Config.DebugLogging;
+
+        internal static void DebugInfo(System.Func<string> messageFactory)
+        {
+            if (!IsDebugLoggingEnabled())
+                return;
+            Log.Info(messageFactory());
+        }
+
         // IPAによってBeatSaber起動時に1回呼ばれるコンストラクタ
         [Init]
         public Plugin(IPALogger logger, Config conf, Zenjector zenjector)

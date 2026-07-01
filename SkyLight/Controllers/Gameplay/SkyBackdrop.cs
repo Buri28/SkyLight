@@ -53,7 +53,7 @@ namespace SkyLight.Controllers.Gameplay
 
             if (!_logged)
             {
-                Plugin.Log.Info($"[SkyLight][dome] camera={(cam != null ? cam.name : "null")} layer={useLayer}({LayerMask.LayerToName(useLayer)}) hiddenQuads={_hidden.Count} scale={scale}");
+                Plugin.DebugInfo(() => $"[SkyLight][dome] camera={(cam != null ? cam.name : "null")} layer={useLayer}({LayerMask.LayerToName(useLayer)}) hiddenQuads={_hidden.Count} scale={scale}");
                 _logged = true;
             }
         }
