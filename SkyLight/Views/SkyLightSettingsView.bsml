@@ -117,6 +117,17 @@
                        min='0' max='1' increment='0.05'
                        hover-hint='Opacity of the floor. Lower = more see-through AND dimmer, so it glows less with Bloom ON.' />
 
+    <!-- ───────── Side Lanes ───────── -->
+    <horizontal spacing='1' pad='0' pad-top='1'>
+            <text text='[Side Lanes]' color='#7FB5FF' />
+    </horizontal>
+
+    <toggle-setting text='Show Side Lanes'
+                      value='show-side-lanes'
+                      apply-on-change='true'
+                      bind-value='true'
+                      hover-hint='Show or hide the side lanes and track-side black strips beside the floor.' />
+
     <!-- ───────── Structures ───────── -->
     <horizontal spacing='1' pad='0' pad-top='1'>
       <text text='[Structures]' color='#DDA0DD' />

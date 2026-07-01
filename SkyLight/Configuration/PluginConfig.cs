@@ -45,11 +45,13 @@ namespace SkyLight.Configuration
 
         // ─── 床（反射床/Mirror） ───────────────────────────────
         public virtual bool ShowFloor { get; set; } = true;
+        public virtual bool ShowSideLanes { get; set; } = true;
         public virtual bool PaintFloor { get; set; } = true;
         public virtual string FloorColor { get; set; } = "#68696C";
         public virtual float FloorBrightness { get; set; } = 1.0f;
         public virtual float FloorAlpha { get; set; } = 1.0f;
         public virtual string FloorPaintShaderHint { get; set; } = "Mirror";
+        public virtual string SideLaneHints { get; set; } = "TrackConstruction;TrackLane;Lane;Road";
 
         // ─── 構造物（黒いシルエットの構造物。名前/シェーダーで対象指定） ───────────────────
         public virtual bool ShowStructures { get; set; } = true;

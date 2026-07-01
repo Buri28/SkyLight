@@ -74,6 +74,13 @@ namespace SkyLight.Controllers.Settings
             set { _config.ShowFloor = value; _config.Changed(); }
         }
 
+        [UIValue("show-side-lanes")]
+        public bool ShowSideLanes
+        {
+            get => _config.ShowSideLanes;
+            set { _config.ShowSideLanes = value; _config.Changed(); }
+        }
+
         [UIValue("floor-color")]
         public Color FloorColor
         {
@@ -223,6 +230,7 @@ namespace SkyLight.Controllers.Settings
             _config.Bloom = d.Bloom;
             _config.HideNeon = d.HideNeon;
             _config.ShowFloor = d.ShowFloor;
+            _config.ShowSideLanes = d.ShowSideLanes;
             _config.PaintFloor = d.PaintFloor;
             _config.FloorColor = d.FloorColor;
             _config.FloorBrightness = d.FloorBrightness;
@@ -258,6 +266,7 @@ namespace SkyLight.Controllers.Settings
             NotifyPropertyChanged(nameof(Bloom));
             NotifyPropertyChanged(nameof(ShowNeon));
             NotifyPropertyChanged(nameof(ShowFloor));
+            NotifyPropertyChanged(nameof(ShowSideLanes));
             NotifyPropertyChanged(nameof(PaintFloor));
             NotifyPropertyChanged(nameof(FloorColor));
             NotifyPropertyChanged(nameof(FloorBrightness));
