@@ -19,6 +19,12 @@
                     bind-value='true'
                     hover-hint='Full-screen Bloom ON/OFF. ON = notes/lasers glow (bright colors may white out). OFF = no glow but nothing whites out.' />
 
+        <toggle-setting text='Show Neon'
+            value='show-neon'
+                    apply-on-change='true'
+                    bind-value='true'
+            hover-hint='Show the NeonLight layer (moving neon bars / lasers / cyan beams). OFF hides them from the camera. Takes effect from the next song.' />
+
     <!-- ───────── Presets ───────── -->
     <horizontal spacing='1' pad='0' pad-top='1'>
       <text text='[Presets]' color='#FF8FB3' />
@@ -41,9 +47,9 @@
 
     <string-setting text='Save As'
                     value='preset-name'
-                    apply-on-change='true'
-                    bind-value='true'
-                    hover-hint='Name for a new preset. Leave blank to overwrite the selected one.' />
+            apply-on-change='true'
+            bind-value='true'
+            hover-hint='Name for a new preset. Leave blank to overwrite the selected one.' />
 
     <horizontal spacing='1' pad='0'>
       <button text='Save Preset' on-click='save-preset'
@@ -79,11 +85,17 @@
       <text text='[Floor]' color='#00CED1' />
     </horizontal>
 
-    <toggle-setting text='Paint Floor'
-                    value='paint-floor'
-                    apply-on-change='true'
-                    bind-value='true'
-                    hover-hint='Paint the reflective floor (Mirror) a fixed color, independent of Background. Without this the floor mirrors the background/sky and changes with it.' />
+    <toggle-setting text='Show Floor'
+            value='show-floor'
+            apply-on-change='true'
+            bind-value='true'
+            hover-hint='Show or hide the floor itself.' />
+
+        <toggle-setting text='Floor Customize'
+            value='paint-floor'
+            apply-on-change='true'
+            bind-value='true'
+            hover-hint='Apply the Floor Color settings to the reflective floor (Mirror), independent of Background.' />
 
     <color-setting text='Floor Color'
                    value='floor-color'
@@ -110,11 +122,17 @@
       <text text='[Structures]' color='#DDA0DD' />
     </horizontal>
 
-    <toggle-setting text='Paint Structures'
-                    value='paint-structures'
-                    apply-on-change='true'
-                    bind-value='true'
-                    hover-hint='Affect the environment structures (silhouettes). Targets are matched by Structure hints (advanced, in the JSON).' />
+    <toggle-setting text='Show Structures'
+            value='show-structures'
+            apply-on-change='true'
+            bind-value='true'
+            hover-hint='Show or hide the matched structure objects.' />
+
+        <toggle-setting text='Structures Customize'
+            value='paint-structures'
+            apply-on-change='true'
+            bind-value='true'
+            hover-hint='Apply structure color and opacity settings to the environment structures.' />
 
     <toggle-setting text='Structure Colorize'
                     value='structure-colorize'
@@ -142,22 +160,33 @@
                        min='0' max='1' increment='0.05'
                        hover-hint='Opacity of the structures. Lower = more see-through (original shows behind).' />
 
+    <!-- ───────── Bars ───────── -->
+    <horizontal spacing='1' pad='0' pad-top='1'>
+      <text text='[Bars]' color='#B0C4DE' />
+    </horizontal>
+
+    <toggle-setting text='Show Bars'
+            value='show-bars'
+            apply-on-change='true'
+            bind-value='true'
+            hover-hint='Show or hide Spectrogram bars independently from structures.' />
+
     <!-- ───────── Ring ───────── -->
     <horizontal spacing='1' pad='0' pad-top='1'>
       <text text='[Ring]' color='#9ACD32' />
     </horizontal>
 
-    <toggle-setting text='Paint Ring'
-                    value='paint-ring'
-                    apply-on-change='true'
-                    bind-value='true'
-                    hover-hint='Affect ring objects matched by Ring Hints below. Some environments have no "Ring" object -- set the hints to a name/shader that matches.' />
+    <toggle-setting text='Show Ring'
+            value='show-ring'
+            apply-on-change='true'
+            bind-value='true'
+            hover-hint='Show or hide matched ring objects.' />
 
-    <string-setting text='Ring Hints'
-                    value='ring-hints'
-                    apply-on-change='true'
-                    bind-value='true'
-                    hover-hint='Name/shader substrings to match for rings (; separated). Default "Ring". If a song has no Ring object, set this to a matching name or shader.' />
+        <toggle-setting text='Ring Customize'
+            value='paint-ring'
+            apply-on-change='true'
+            bind-value='true'
+            hover-hint='Apply ring color and opacity settings to ring objects.' />
 
     <toggle-setting text='Ring Colorize'
                     value='ring-colorize'
