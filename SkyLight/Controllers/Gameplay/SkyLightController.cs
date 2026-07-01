@@ -23,6 +23,7 @@ namespace SkyLight.Controllers.Gameplay
         private readonly BloomTamer _bloomTamer = new();
         // 床：Bloom ON は FloorColor を反射ドームに塗って反射、Bloom OFF はフラット塗り。
         private readonly TargetPainter _floorFlat = new("floor", alwaysReassign: true, writeDepth: true);
+        private readonly TargetPainter _sideLanes = new("side-lanes");
         // 構造物・バー・リングは半透明で着色するペインター。
         private readonly TargetPainter _structures = new("struct", excludeFloorLike: true);
         private readonly TargetPainter _bars = new("bars");
@@ -94,6 +95,7 @@ namespace SkyLight.Controllers.Gameplay
         private bool _domeBuilt;
         private int _floorMode; // 0=Bloom ONでカメラ背景に映す / 1=Bloom OFFでフラット塗り
         private bool _floorPainted;
+        private bool _sideLanesPainted;
         private bool _structPainted;
         private bool _barsPainted;
         private bool _ringPainted;
@@ -136,6 +138,7 @@ namespace SkyLight.Controllers.Gameplay
                 _floorMode = wantFloorMode;
             }
             UpdateFloorVisibility();
+            UpdateSideLaneVisibility();
 
             // 構造物（名前/シェーダーヒントで対象、除外あり）。Colorize=false なら元の色のまま透明度だけ。
             UpdateTarget(_structures, _config.PaintStructures || !_config.ShowStructures, ref _structPainted,
@@ -263,6 +266,46 @@ namespace SkyLight.Controllers.Gameplay
             _bars.SetVisible(_config.ShowBars);
         }
 
+        private void UpdateSideLaneVisibility()
+        {
+            if (!_sideLanesPainted)
+            {
+                _sideLanes.Collect(GetEffectiveSideLaneHints(), GetEffectiveSideLaneExcludes(), disableMirror: false, colorize: true);
+                _sideLanesPainted = true;
+            }
+
+            if (_frame % TargetRefreshInterval == 0)
+                _sideLanes.Refresh(GetEffectiveSideLaneHints(), GetEffectiveSideLaneExcludes(), disableMirror: false);
+
+            _sideLanes.SetVisible(_config.ShowSideLanes);
+        }
+
+        private string GetEffectiveSideLaneHints()
+        {
+            return MergeHints(
+                _config.SideLaneHints,
+                "TrackConstruction",
+                "TrackLane",
+                "Road",
+                "Runway");
+        }
+
+        private string GetEffectiveSideLaneExcludes()
+        {
+            return MergeHints(
+                string.Empty,
+                "Mirror",
+                "Floor",
+                "Spectrogram",
+                "Ring",
+                "Note",
+                "Saber",
+                "Arrow",
+                "Bomb",
+                "BloomSkyboxQuad",
+                "Skybox");
+        }
+
         private void UpdateFloorVisibility()
         {
             bool wantTracking = !_config.ShowFloor || _floorMode == 1;
@@ -315,12 +358,14 @@ namespace SkyLight.Controllers.Gameplay
             _backdrop.Cleanup();
             _bloomTamer.Restore();
             _floorFlat.Restore();
+            _sideLanes.Restore();
             _structures.Restore();
             _bars.Restore();
             _ring.Restore();
             _domeBuilt = false;
             _floorMode = 0;
             _floorPainted = false;
+            _sideLanesPainted = false;
             _structPainted = false;
             _barsPainted = false;
             _ringPainted = false;
