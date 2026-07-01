@@ -39,13 +39,6 @@ namespace SkyLight.Controllers.Settings
             set { _config.RecolorBackground = value; _config.Changed(); }
         }
 
-        [UIValue("fill-background")]
-        public bool FillBackground
-        {
-            get => _config.FillBackground;
-            set { _config.FillBackground = value; _config.Changed(); }
-        }
-
         [UIValue("background-color")]
         public Color BackgroundColor
         {
@@ -151,13 +144,6 @@ namespace SkyLight.Controllers.Settings
             set { _config.ShowBars = value; _config.Changed(); }
         }
 
-        [UIValue("background-layer")]
-        public int BackgroundLayer
-        {
-            get => _config.BackgroundLayer;
-            set { _config.BackgroundLayer = value; _config.Changed(); }
-        }
-
         [UIValue("bloom")]
         public bool Bloom
         {
@@ -223,10 +209,8 @@ namespace SkyLight.Controllers.Settings
 
             _config.Enabled = d.Enabled;
             _config.RecolorBackground = d.RecolorBackground;
-            _config.FillBackground = d.FillBackground;
             _config.BackgroundColor = d.BackgroundColor;
             _config.BackgroundBrightness = d.BackgroundBrightness;
-            _config.BackgroundLayer = d.BackgroundLayer;
             _config.Bloom = d.Bloom;
             _config.HideNeon = d.HideNeon;
             _config.ShowFloor = d.ShowFloor;
@@ -259,10 +243,8 @@ namespace SkyLight.Controllers.Settings
         {
             NotifyPropertyChanged(nameof(Enabled));
             NotifyPropertyChanged(nameof(RecolorBackground));
-            NotifyPropertyChanged(nameof(FillBackground));
             NotifyPropertyChanged(nameof(BackgroundColor));
             NotifyPropertyChanged(nameof(BackgroundBrightness));
-            NotifyPropertyChanged(nameof(BackgroundLayer));
             NotifyPropertyChanged(nameof(Bloom));
             NotifyPropertyChanged(nameof(ShowNeon));
             NotifyPropertyChanged(nameof(ShowFloor));

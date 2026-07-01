@@ -109,8 +109,7 @@ namespace SkyLight.Controllers.Gameplay
             // 背景ドーム。Sky Background ON 時に元背景を置き換える。
             if (useBackdrop && !_domeBuilt)
             {
-                _backdrop.Build(_config.BackgroundShaderHints, _config.BackgroundLayer, 0,
-                                GetDomeColor(), DomeScale, _config.FloorShaderHint);
+                _backdrop.Build(_config.BackgroundShaderHints, GetDomeColor(), DomeScale);
                 _domeBuilt = true;
             }
             else if (!useBackdrop && _domeBuilt)
@@ -123,8 +122,7 @@ namespace SkyLight.Controllers.Gameplay
                 _backdrop.Reassert();
                 _backdrop.SetColor(GetDomeColor());
                 // 黒い虚無の保険塗り（ドームが覆うので1回でよい）。
-                if (_config.FillBackground)
-                    FillCameraBackgrounds();
+                FillCameraBackgrounds();
             }
 
             // 床の色は FloorColor。塗り方が Bloom で違う：
