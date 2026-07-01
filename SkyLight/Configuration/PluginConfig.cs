@@ -20,10 +20,6 @@ namespace SkyLight.Configuration
         // シーン診断ダンプ。曲開始時にカメラ一覧・シェーダー在庫・RenderSettings をログ出力する（DebugLogging が前提）。
         public virtual bool DumpScene { get; set; } = false;
 
-
-        // カメラ背景（Skybox/SolidColor クリア）を背景色で塗る保険。
-        public virtual bool FillBackground { get; set; } = true;
-
         // 全画面ブルーム(MainEffectController)の ON/OFF。true=ON（ノーツ/レーザー発光あり）。
         public virtual bool Bloom { get; set; } = true;
 
@@ -35,9 +31,7 @@ namespace SkyLight.Configuration
         public virtual bool RecolorBackground { get; set; } = true;
         public virtual string BackgroundColor { get; set; } = "#778BE2";
         public virtual float BackgroundBrightness { get; set; } = 1.0f;
-        public virtual int BackgroundLayer { get; set; } = 0;
-        public virtual string FloorShaderHint { get; set; } = "SimpleLit"; // レイヤー自動検出用
-        public virtual string BackgroundShaderHints { get; set; } = "BloomSkyboxQuad;Skybox"; // 予約（未使用）
+        public virtual string BackgroundShaderHints { get; set; } = "BloomSkyboxQuad;Skybox";
 
         // ネオン/レーザー（NeonLight レイヤー）を非表示にする。横の動くネオンバーや水色ビームを消す。
         // これらは BloomPrePass で描かれ色塗り不可のため、カメラの描画対象から外して隠す方式。

@@ -18,7 +18,7 @@ namespace SkyLight.Controllers.Gameplay
         private Transform? _camT;
         private bool _logged;
 
-        public void Build(string hideHints, int layer, float floorLayerFallback, Color color, float scale, string floorShaderHint)
+        public void Build(string hideHints, Color color, float scale)
         {
             // 実描画している MainCamera を探してドームの親にする
             var cam = Camera.allCameras.FirstOrDefault(c =>
@@ -26,16 +26,6 @@ namespace SkyLight.Controllers.Gameplay
             _camT = cam != null ? cam.transform : null;
 
             var all = Object.FindObjectsOfType<Renderer>();
-
-            // レイヤー決定（-1=床と同じレイヤーを自動採用）
-            int useLayer = layer;
-            if (useLayer < 0)
-            {
-                useLayer = (int)floorLayerFallback;
-                var floor = all.FirstOrDefault(r => r.sharedMaterials.Any(m => m != null && m.shader != null &&
-                    m.shader.name.IndexOf(floorShaderHint, System.StringComparison.OrdinalIgnoreCase) >= 0));
-                if (floor != null) useLayer = floor.gameObject.layer;
-            }
 
             // 元の背景クワッドを収集（毎フレーム非表示にする）。ドームが背景を置き換える。
             _hidden.Clear();
@@ -48,12 +38,12 @@ namespace SkyLight.Controllers.Gameplay
             }
 
             EnsureMaterial(color);
-            EnsureDome(useLayer, scale);
+            EnsureDome(0, scale);
             Apply();
 
             if (!_logged)
             {
-                Plugin.DebugInfo(() => $"[SkyLight][dome] camera={(cam != null ? cam.name : "null")} layer={useLayer}({LayerMask.LayerToName(useLayer)}) hiddenQuads={_hidden.Count} scale={scale}");
+                Plugin.DebugInfo(() => $"[SkyLight][dome] camera={(cam != null ? cam.name : "null")} hiddenQuads={_hidden.Count} scale={scale}");
                 _logged = true;
             }
         }
