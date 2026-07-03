@@ -48,7 +48,7 @@ namespace SkyLight.Controllers
 
         private static void DumpEffectObjects()
         {
-            string[] keys = { "bloom", "maineffect", "tonemap", "postprocess", "colorgrad", "smaa", "fxaa" };
+            string[] keys = { "bloom", "maineffect", "tonemap", "postprocess", "colorgrad", "smaa", "fxaa", "exposure", "adapt", "eye", "hdr", "luminance" };
 
             // Component（カメラ付随のエフェクト挙動）
             var comps = Resources.FindObjectsOfTypeAll<MonoBehaviour>()
@@ -156,12 +156,18 @@ namespace SkyLight.Controllers
             sb.AppendLine($"{indent}{memberType.Name} {name} = {FormatValue(value)}");
         }
 
-        private static void DumpNestedScriptableObject(StringBuilder sb, ScriptableObject so, string indent)
+        // 一度「効果関連」と判定されたScriptableObject(_mainEffectContainer→_mainEffect→…)に入った後は、
+        // しきい値/強度などのフィールド名がShouldLogMemberのキーワードに一致しないことがあるため、
+        // ここから先は全フィールドを無条件でダンプする。深さ上限とID重複ガードで循環参照・肥大化を防ぐ。
+        private static void DumpNestedScriptableObject(StringBuilder sb, ScriptableObject so, string indent, int depth = 0, HashSet<int>? visited = null)
         {
+            const int maxDepth = 4;
+            visited ??= new HashSet<int>();
+            if (depth > maxDepth || !visited.Add(so.GetInstanceID())) return;
+
             var flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
             foreach (var field in so.GetType().GetFields(flags))
             {
-                if (!ShouldLogMember(field.Name)) continue;
                 object? value;
                 try
                 {
@@ -172,10 +178,84 @@ namespace SkyLight.Controllers
                     value = $"<read failed: {ex.GetType().Name}>";
                 }
 
-                if (value is UnityEngine.Object nestedObject)
+                if (value is ScriptableObject nestedSo)
+                {
+                    sb.AppendLine($"{indent}{field.FieldType.Name} {field.Name} = {nestedSo.name} ({nestedSo.GetType().FullName})");
+                    DumpNestedScriptableObject(sb, nestedSo, indent + "  ", depth + 1, visited);
+                }
+                else if (value is Material mat)
+                {
+                    sb.AppendLine($"{indent}{field.FieldType.Name} {field.Name} = {mat.name} ({mat.GetType().FullName})");
+                    DumpMaterialProperties(sb, mat, indent + "  ");
+                }
+                else if (value is UnityEngine.Object nestedObject)
                     sb.AppendLine($"{indent}{field.FieldType.Name} {field.Name} = {nestedObject.name} ({nestedObject.GetType().FullName})");
                 else
                     sb.AppendLine($"{indent}{field.FieldType.Name} {field.Name} = {FormatValue(value)}");
+            }
+        }
+
+        // Bloomの実しきい値/強度はScriptableObjectのフィールドではなく、実際にはシェーダー(マテリアル)
+        // 側のプロパティ(_Threshold 等)に持たれていることが多いため、割り当てられたマテリアルの
+        // シェーダープロパティを列挙してダンプする。
+        private static void DumpMaterialProperties(StringBuilder sb, Material mat, string indent)
+        {
+            var shader = mat.shader;
+            if (shader == null) return;
+
+            int count;
+            try
+            {
+                count = shader.GetPropertyCount();
+            }
+            catch (Exception ex)
+            {
+                sb.AppendLine($"{indent}<GetPropertyCount failed: {ex.GetType().Name}>");
+                return;
+            }
+
+            for (int i = 0; i < count; i++)
+            {
+                string name;
+                UnityEngine.Rendering.ShaderPropertyType type;
+                try
+                {
+                    name = shader.GetPropertyName(i);
+                    type = shader.GetPropertyType(i);
+                }
+                catch (Exception ex)
+                {
+                    sb.AppendLine($"{indent}<property {i} read failed: {ex.GetType().Name}>");
+                    continue;
+                }
+
+                try
+                {
+                    switch (type)
+                    {
+                        case UnityEngine.Rendering.ShaderPropertyType.Float:
+                        case UnityEngine.Rendering.ShaderPropertyType.Range:
+                            sb.AppendLine($"{indent}[mat] {name} = {mat.GetFloat(name):0.####}");
+                            break;
+                        case UnityEngine.Rendering.ShaderPropertyType.Int:
+                            sb.AppendLine($"{indent}[mat] {name} = {mat.GetInt(name)}");
+                            break;
+                        case UnityEngine.Rendering.ShaderPropertyType.Color:
+                            sb.AppendLine($"{indent}[mat] {name} = {FormatValue(mat.GetColor(name))}");
+                            break;
+                        case UnityEngine.Rendering.ShaderPropertyType.Vector:
+                            sb.AppendLine($"{indent}[mat] {name} = {FormatValue(mat.GetVector(name))}");
+                            break;
+                        default:
+                            // Texture 等は名前だけ出す。
+                            sb.AppendLine($"{indent}[mat] {name} ({type})");
+                            break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    sb.AppendLine($"{indent}[mat] {name} = <read failed: {ex.GetType().Name}>");
+                }
             }
         }
 
