@@ -234,8 +234,8 @@ namespace SkyLight.Controllers.Gameplay
                 "BloomSkyboxQuad",
                 "Ring",
                 "TrackConstruction",
+                "FloorConstruction",
                 "Spectrogram",
-                "Floor",
                 "Runway",
                 "TrackLane",
                 "Lane",
@@ -292,7 +292,6 @@ namespace SkyLight.Controllers.Gameplay
             return MergeHints(
                 string.Empty,
                 "Mirror",
-                "Floor",
                 "Spectrogram",
                 "Ring",
                 "Note",
