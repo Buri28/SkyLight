@@ -35,9 +35,8 @@ namespace SkyLight.Controllers.Gameplay
         private bool _isFirstApply = false;
 
 
-        // 触ったカメラの元 clearFlags / 背景色（復元用）。MainCamera はシーンをまたいで生き残るため必ず戻す。
+        // 触ったカメラの元 clearFlags / 背景色（復元用）。シーンをまたいで生き残るものがあるため必ず戻す。
         private readonly Dictionary<Camera, (CameraClearFlags flags, Color bg)> _origCameras = new();
-        private Camera? _mainCamCache; // 反射用にメインカメラ背景色を設定する対象（1回探索してキャッシュ）
         private int _neonLayer = -1;   // NeonLight レイヤー番号（1回解決）
         private readonly Dictionary<Camera, int> _neonCamMasks = new(); // ネオン非表示で変更したカメラの元 cullingMask
 
@@ -385,25 +384,25 @@ namespace SkyLight.Controllers.Gameplay
         {
             bool bloomOn = _config.Bloom && !_config.RecolorBackground;
             if (bloomOn && _config.PaintFloor && _config.ShowFloor)
-                SetMainCameraBackgroundColor(MakeColor(_config.FloorColor, _config.FloorBrightness, 1f, new Color(0.13f, 0.16f, 0.19f)));
+                SetGameplayCameraBackgroundColor(MakeColor(_config.FloorColor, _config.FloorBrightness, 1f, new Color(0.13f, 0.16f, 0.19f)));
         }
 
-        // メインカメラの backgroundColor だけを設定（clearFlags は据え置き）。反射カメラがこれを引き継いで床に映す。
-        // メインカメラは1回だけ探索してキャッシュし、色が変わったときだけ設定する（毎フレームの allCameras 走査を避ける）。
-        private void SetMainCameraBackgroundColor(Color color)
+        // 背景をクリアするゲームプレイ用カメラの backgroundColor を同期する（clearFlags は据え置き）。
+        // 録画/デスクトップ側のカメラもここへ含めることで、VR と同じ床反射色になるようにする。
+        private void SetGameplayCameraBackgroundColor(Color color)
         {
-            if (_mainCamCache == null)
+            foreach (var cam in Camera.allCameras)
             {
-                _mainCamCache = Camera.main;
-                if (_mainCamCache == null)
-                    foreach (var cam in Camera.allCameras)
-                        if (cam != null && cam.CompareTag("MainCamera")) { _mainCamCache = cam; break; }
-                if (_mainCamCache == null) return;
-                if (!_origCameras.ContainsKey(_mainCamCache))
-                    _origCameras[_mainCamCache] = (_mainCamCache.clearFlags, _mainCamCache.backgroundColor);
+                if (cam == null) continue;
+                if (cam.clearFlags != CameraClearFlags.Skybox && cam.clearFlags != CameraClearFlags.SolidColor)
+                    continue;
+
+                if (!_origCameras.ContainsKey(cam))
+                    _origCameras[cam] = (cam.clearFlags, cam.backgroundColor);
+
+                if (cam.backgroundColor != color)
+                    cam.backgroundColor = color;
             }
-            if (_mainCamCache.backgroundColor != color)
-                _mainCamCache.backgroundColor = color; // clearFlags は変えない
         }
 
         // 背景をクリアするカメラ(Skybox/SolidColor)の背景を空色で塗り、黒い虚無を消す。
@@ -435,7 +434,6 @@ namespace SkyLight.Controllers.Gameplay
                 kv.Key.backgroundColor = kv.Value.bg;
             }
             _origCameras.Clear();
-            _mainCamCache = null;
 
             // ネオン非表示で変更したカメラの cullingMask を元に戻す。
             foreach (var kv in _neonCamMasks)

@@ -15,7 +15,7 @@ namespace SkyLight.Configuration
         public virtual bool Enabled { get; set; } = true;
 
         // 詳細ログ出力フラグ。true のときだけ Debug レベルの診断ログを出す。
-        public virtual bool DebugLogging { get; set; } = false;
+        public virtual bool DebugLogging { get; set; } = true;
 
         // シーン診断ダンプ。曲開始時にカメラ一覧・シェーダー在庫・RenderSettings をログ出力する（DebugLogging が前提）。
         public virtual bool DumpScene { get; set; } = false;
