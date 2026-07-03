@@ -19,6 +19,46 @@ namespace SkyLight.Controllers
             DumpTallRenderers();
             DumpBuildingLikeRenderers();
             DumpLights();
+            DumpSceneRoots();
+            DumpPlatformComponents();
+        }
+
+        // カスタムプラットフォームは通常シーンの別ルート(GameObjectの最上位祖先)にまるごとぶら下がる。
+        // ルート名ごとにRendererを集計すれば、どのルートがプラットフォーム本体かひと目で分かる。
+        private static void DumpSceneRoots()
+        {
+            var sb = new StringBuilder();
+            var groups = Object.FindObjectsOfType<Renderer>()
+                .Where(r => r != null)
+                .GroupBy(r => GetRootName(r.transform))
+                .OrderByDescending(g => g.Count())
+                .ToList();
+            sb.AppendLine($"[SkyLight][diag] === Renderer roots ({groups.Count} distinct) ===");
+            foreach (var g in groups)
+                sb.AppendLine($"  '{g.Key}' renderers={g.Count()}");
+            Plugin.Log.Info(sb.ToString());
+        }
+
+        // CustomPlatforms(等)はプラットフォームのルートに"PlatformDescriptor"のような
+        // 名前のコンポーネントを付けるのが定番。アセンブリ参照せずに型名一致だけで探す
+        // （BloomTamerが"MainEffectController"を探すのと同じ手法）。
+        private static void DumpPlatformComponents()
+        {
+            var sb = new StringBuilder();
+            var comps = Resources.FindObjectsOfTypeAll<MonoBehaviour>()
+                .Where(m => m != null && m.GetType().Name.IndexOf("Platform", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                .ToList();
+            sb.AppendLine($"[SkyLight][diag] === Platform-named components ({comps.Count}) ===");
+            foreach (var c in comps)
+                sb.AppendLine($"  type={c.GetType().FullName} gameObject='{GetPath(c.transform)}' active={c.gameObject.activeInHierarchy}");
+            Plugin.Log.Info(sb.ToString());
+        }
+
+        private static string GetRootName(Transform t)
+        {
+            var cur = t;
+            while (cur.parent != null) cur = cur.parent;
+            return cur.name;
         }
 
         // 「ビル/柱/街」らしい名前のレンダラーを大小問わず全部列挙（黒バーの特定用）。

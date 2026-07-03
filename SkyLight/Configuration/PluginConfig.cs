@@ -45,7 +45,7 @@ namespace SkyLight.Configuration
         public virtual float FloorBrightness { get; set; } = 1.0f;
         public virtual float FloorAlpha { get; set; } = 1.0f;
         public virtual string FloorPaintShaderHint { get; set; } = "Mirror";
-        public virtual string SideLaneHints { get; set; } = "TrackConstruction;TrackLane;Lane;Road";
+        public virtual string SideLaneHints { get; set; } = "TrackConstruction;FloorConstruction;TrackLane;Lane;Road";
 
         // ─── 構造物（黒いシルエットの構造物。名前/シェーダーで対象指定） ───────────────────
         public virtual bool ShowStructures { get; set; } = true;
