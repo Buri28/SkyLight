@@ -19,9 +19,14 @@ namespace SkyLight.Controllers.Gameplay
         private GameObject? _dome;
         private Material? _mat;
         private readonly List<Renderer> _hidden = new(); // 非表示にした元の背景クワッド（不透明モードのみ使用）
+        private readonly List<(GameObject go, int origLayer)> _transparentQuads = new(); // 透過モードで反射除外レイヤーへ移した元クワッド
         private Transform? _camT;
         private bool _logged;
         private bool _transparentMode; // alpha<1 のとき true。元背景を隠さず半透明ブレンドする。
+
+        // ドームを乗せるレイヤー。反射(Mirror)カメラのcullingMaskからだけこのレイヤーを外し、
+        // 直接視点のカメラには映すことで「反射に映り込んで2色に割れる」問題を避ける。
+        public int Layer { get; private set; } = 0;
 
         public void Build(string hideHints, Color color, float scale)
         {
@@ -37,19 +42,34 @@ namespace SkyLight.Controllers.Gameplay
             // 不透明モードのみ: 元の背景クワッドを収集（毎フレーム非表示にする）。ドームが背景を置き換える。
             // 透過モードでは元の背景を残し、その上に半透明の色を重ねるので隠さない。
             _hidden.Clear();
+            foreach (var (go, origLayer) in _transparentQuads)
+                if (go != null) go.layer = origLayer;
+            _transparentQuads.Clear();
+
+            var hints = hideHints.Split(';').Select(h => h.Trim()).Where(h => h.Length > 0).ToArray();
+            var quads = all.Where(r => r.sharedMaterials.Any(m => m != null && m.shader != null &&
+                    hints.Any(h => m.shader.name.IndexOf(h, System.StringComparison.OrdinalIgnoreCase) >= 0))).ToList();
+
+            Layer = ResolveSpareLayer();
+
             if (!_transparentMode)
             {
-                var hints = hideHints.Split(';').Select(h => h.Trim()).Where(h => h.Length > 0).ToArray();
-                foreach (var r in all)
+                // 不透明モード: 元の背景クワッドを非表示にする。ドームが背景を置き換える。
+                _hidden.AddRange(quads);
+            }
+            else
+            {
+                // 透過モード: 元の背景クワッドは隠さず残すが、反射(Mirror)カメラには映さないよう
+                // ドームと同じ「反射除外レイヤー」へ一時的に移す（直接視点のカメラでは普通に見える）。
+                foreach (var r in quads)
                 {
-                    if (r.sharedMaterials.Any(m => m != null && m.shader != null &&
-                            hints.Any(h => m.shader.name.IndexOf(h, System.StringComparison.OrdinalIgnoreCase) >= 0)))
-                        _hidden.Add(r);
+                    _transparentQuads.Add((r.gameObject, r.gameObject.layer));
+                    r.gameObject.layer = Layer;
                 }
             }
 
             EnsureMaterial(color);
-            EnsureDome(0, scale);
+            EnsureDome(Layer, scale);
             Apply();
 
             if (!_logged)
@@ -75,6 +95,10 @@ namespace SkyLight.Controllers.Gameplay
             foreach (var r in _hidden)
                 if (r != null) r.enabled = true; // 元に戻す（シーン破棄前提だが念のため）
             _hidden.Clear();
+
+            foreach (var (go, origLayer) in _transparentQuads)
+                if (go != null) go.layer = origLayer;
+            _transparentQuads.Clear();
 
             if (_dome != null) { Object.Destroy(_dome); _dome = null; }
             if (_mat != null) { Object.Destroy(_mat); _mat = null; }
@@ -117,6 +141,15 @@ namespace SkyLight.Controllers.Gameplay
                 _mat.SetInt("_ZTest", (int)CompareFunction.Always); // 常に最背面に描く（他を遮らない）
                 _mat.renderQueue = (int)RenderQueue.Background;      // 最初に描く＝最背面
             }
+        }
+
+        // どのMODやシーンオブジェクトにも使われていない空きレイヤーを1つ探す（毎回同じ結果になるよう高い番号から）。
+        // 見つからない場合は Default(0) にフォールバック（除外は諦めるが直接視点の表示自体は変わらない）。
+        private static int ResolveSpareLayer()
+        {
+            for (int i = 31; i >= 8; i--)
+                if (string.IsNullOrEmpty(LayerMask.LayerToName(i))) return i;
+            return 0;
         }
 
         private void EnsureDome(int layer, float scale)

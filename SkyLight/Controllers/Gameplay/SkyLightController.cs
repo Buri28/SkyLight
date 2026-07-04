@@ -83,12 +83,18 @@ namespace SkyLight.Controllers.Gameplay
 
             _bloomTamer.Reassert(!IsBloomOn());
             ApplyCameraBackground();
+            if (_domeBuilt)
+                ExcludeDomeFromReflections();
 
             if (!_isFirstApply && _frame % 60 == 0)
             {
                 ApplyMode(); // 後から出現する対象（リング等）も拾って塗る
                 _isFirstApply = true;
             }
+
+            // 診断: 塗った後に何か裏でマテリアルを戻していないか、数秒おきに確認する（DebugLoggingのときだけ）。
+            if (_config.DebugLogging && _isFirstApply && _frame % 120 == 0 && _frame <= 600)
+                _floorFlat.DebugLogCurrentShaders();
         }
 
         // ─── 着色の適用（全対象 半透明＝B方式） ───────────────────────────
@@ -426,6 +432,20 @@ namespace SkyLight.Controllers.Gameplay
 
                 cam.clearFlags = CameraClearFlags.SolidColor;
                 cam.backgroundColor = bg;
+            }
+        }
+
+        // 反射(Mirror)用カメラ(RenderTextureへ描画するカメラ)のcullingMaskからだけ背景ドームのレイヤーを外す。
+        // Mirrorの反射カメラは毎フレーム CopyFrom(mainCamera) でcullingMaskを引き継ぐため、この除外も毎フレーム必要。
+        // 直接視点のカメラ(targetTexture==null)は触らないのでドーム自体は普通に見える。
+        private void ExcludeDomeFromReflections()
+        {
+            int bit = 1 << _backdrop.Layer;
+            foreach (var cam in Camera.allCameras)
+            {
+                if (cam == null || cam.targetTexture == null) continue;
+                if ((cam.cullingMask & bit) != 0)
+                    cam.cullingMask &= ~bit;
             }
         }
 
