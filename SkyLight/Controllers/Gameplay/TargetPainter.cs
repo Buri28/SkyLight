@@ -295,21 +295,6 @@ namespace SkyLight.Controllers.Gameplay
             _mat.renderQueue = (int)RenderQueue.Transparent;
         }
 
-        // 診断用：現在の実際のシェーダー名を確認する（何か他のスクリプトが裏でマテリアルを戻していないか調べる）。
-        public void DebugLogCurrentShaders()
-        {
-            Plugin.DebugInfo(() =>
-            {
-                var names = string.Join(", ", _painted.Take(12).Select(p =>
-                {
-                    if (p.renderer == null) return "?";
-                    var sh = p.renderer.sharedMaterial != null && p.renderer.sharedMaterial.shader != null ? p.renderer.sharedMaterial.shader.name : "?";
-                    return $"{GetPath(p.renderer.transform)}<{sh}>";
-                }));
-                return $"[SkyLight][{_tag}][check] current shaders: [{names}]";
-            });
-        }
-
         private void LogOnce()
         {
             if (_logged) return;
