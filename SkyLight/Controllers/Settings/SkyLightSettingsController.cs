@@ -39,6 +39,13 @@ namespace SkyLight.Controllers.Settings
             set { _config.RecolorBackground = value; _config.Changed(); }
         }
 
+        [UIValue("allow-bloom-with-background")]
+        public bool AllowBloomWithBackground
+        {
+            get => _config.AllowBloomWithBackground;
+            set { _config.AllowBloomWithBackground = value; _config.Changed(); }
+        }
+
         [UIValue("background-color")]
         public Color BackgroundColor
         {
@@ -51,6 +58,13 @@ namespace SkyLight.Controllers.Settings
         {
             get => _config.BackgroundBrightness;
             set { _config.BackgroundBrightness = value; _config.Changed(); }
+        }
+
+        [UIValue("background-alpha")]
+        public float BackgroundAlpha
+        {
+            get => _config.BackgroundAlpha;
+            set { _config.BackgroundAlpha = value; _config.Changed(); }
         }
 
         [UIValue("paint-floor")]

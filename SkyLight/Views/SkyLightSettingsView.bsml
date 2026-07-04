@@ -67,8 +67,14 @@
                     bind-value='true'
                     hover-hint='Hide the dark game background and wrap the view in a solid sky-colored dome. This uses the non-bloom background path.' />
 
+    <toggle-setting text='Allow Bloom with Sky Background'
+                    value='allow-bloom-with-background'
+                    apply-on-change='true'
+                    bind-value='true'
+                    hover-hint='Keep full-screen Bloom ON even while Sky Background is shown. Combine with Background Alpha below 1 to test the translucent overlay mode without whiteout.' />
+
     <horizontal spacing='1' pad='0'>
-      <text text='Sky Background forces background Bloom OFF.'
+      <text text='Sky Background forces background Bloom OFF unless Allow Bloom is ON.'
             color='#FF5A5A'
           italics='true'
             font-size='3' />
@@ -86,6 +92,13 @@
                        bind-value='true'
                        min='0' max='2' increment='0.05'
                        hover-hint='Multiplies the sky color brightness (RGB).' />
+
+    <increment-setting text='Background Alpha'
+                       value='background-alpha'
+                       apply-on-change='true'
+                       bind-value='true'
+                       min='0' max='1' increment='0.05'
+                       hover-hint='1 = opaque dome (hides original background, whiteout-resistant). Below 1 = keeps the original background visible and blends a real translucent tint over it instead. Rebuilds on next Sky Background toggle.' />
 
     <!-- ───────── Floor ───────── -->
     <horizontal spacing='1' pad='0' pad-top='1'>

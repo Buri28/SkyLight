@@ -31,7 +31,13 @@ namespace SkyLight.Configuration
         public virtual bool RecolorBackground { get; set; } = true;
         public virtual string BackgroundColor { get; set; } = "#778BE2";
         public virtual float BackgroundBrightness { get; set; } = 1.0f;
+        // Alpha=1: 元の背景を隠して不透明に塗り替える（従来通り、白飛びに強い）。
+        // Alpha<1: 元の背景を隠さず、本物の半透明ブレンドで色を重ねる（奥の景色が透ける）。
+        public virtual float BackgroundAlpha { get; set; } = 1.0f;
         public virtual string BackgroundShaderHints { get; set; } = "BloomSkyboxQuad;Skybox";
+        // Sky Background使用中も全画面BloomをONのまま維持する（既定はOFF＝これまで通りBloom強制OFF）。
+        // BackgroundAlpha<1の透過モードと併用する想定。
+        public virtual bool AllowBloomWithBackground { get; set; } = false;
 
         // ネオン/レーザー（NeonLight レイヤー）を非表示にする。横の動くネオンバーや水色ビームを消す。
         // これらは BloomPrePass で描かれ色塗り不可のため、カメラの描画対象から外して隠す方式。
