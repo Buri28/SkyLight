@@ -46,6 +46,11 @@ namespace SkyLight.Controllers.Gameplay
             _config = config;
         }
 
+        // Bloom を実際に有効扱いするかどうか。RecolorBackground(背景壁)使用中は原則Bloomを強制OFFにするが、
+        // AllowBloomWithBackground=true なら維持する（BackgroundAlpha<1の透過モードと併用する想定）。
+        private bool IsBloomOn()
+            => _config.Bloom && (!_config.RecolorBackground || _config.AllowBloomWithBackground);
+
         public void Initialize()
         {
             if (!_config.Enabled) return;
@@ -76,7 +81,7 @@ namespace SkyLight.Controllers.Gameplay
             if (!_active) return;
             _frame++;
 
-            _bloomTamer.Reassert(!(_config.Bloom && !_config.RecolorBackground));
+            _bloomTamer.Reassert(!IsBloomOn());
             ApplyCameraBackground();
 
             if (!_isFirstApply && _frame % 60 == 0)
@@ -102,7 +107,7 @@ namespace SkyLight.Controllers.Gameplay
         private void ApplyMode()
         {
             // Bloom の強制OFFは LateTick が毎フレーム行うのでここでは触らない。
-            bool bloomOn = _config.Bloom && !_config.RecolorBackground;
+            bool bloomOn = IsBloomOn();
             bool useBackdrop = _config.RecolorBackground;
 
             // 背景ドーム。Sky Background ON 時に元背景を置き換える。
@@ -368,9 +373,9 @@ namespace SkyLight.Controllers.Gameplay
             GC.SuppressFinalize(this);
         }
 
-        // 背景ドームの色（hex×brightness、不透明）。背景は単色（後ろに何も無いので透明度は持たない）。
+        // 背景ドームの色（hex×brightness）。Alpha=1で不透明置き換え、Alpha<1で本物の半透明ブレンド。
         private Color GetDomeColor()
-            => MakeColor(_config.BackgroundColor, _config.BackgroundBrightness, 1f, new Color(0.29f, 0.48f, 0.71f));
+            => MakeColor(_config.BackgroundColor, _config.BackgroundBrightness, _config.BackgroundAlpha, new Color(0.29f, 0.48f, 0.71f));
 
 
         // ─── 適用 / 退避 / 復元 ────────────────────────────────────────────
@@ -381,7 +386,7 @@ namespace SkyLight.Controllers.Gameplay
         // Bloom OFF（空ドーム）側のカメラ塗りつぶしは空ドームが背景を覆うので毎フレーム不要 → ApplyMode で1回行う。
         private void ApplyCameraBackground()
         {
-            bool bloomOn = _config.Bloom && !_config.RecolorBackground;
+            bool bloomOn = IsBloomOn();
             if (bloomOn && _config.PaintFloor && _config.ShowFloor)
                 SetGameplayCameraBackgroundColor(MakeColor(_config.FloorColor, _config.FloorBrightness, 1f, new Color(0.13f, 0.16f, 0.19f)));
         }
