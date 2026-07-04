@@ -99,8 +99,11 @@ namespace SkyLight.Controllers.Gameplay
 
         // ─── 着色の適用（全対象 半透明＝B方式） ───────────────────────────
         // Bloom は独立トグル。各対象（背景/床/構造物/リング）を Color×Brightness と Alpha(不透明度) で半透明着色。
-        // 空ドームの半径（内部固定）。カメラの far クリップに収まり、かつ構造物より外側に出ない値。
-        private const float DomeScale = 60f;
+        // 空ドームの半径（内部固定）。床(TrackMirror)は奥行き約250、BackColumnsは約157まで伸びており、
+        // 旧来の60だとそれより手前でドームが終わってしまい、床の奥側だけ元の(真っ黒な)背景が透けて見えていた。
+        // ドームは無地の単色キューブなので大きくしても見た目は変わらない。カメラの far クリップ内で、
+        // 実在するオブジェクトの最大奥行きより十分大きい値にする。
+        private const float DomeScale = 400f;
         private const int TargetRefreshInterval = 60; // 約1秒ごとに後発の対象を増分収集（出揃ったら自動で停止）
         private bool _domeBuilt;
         private int _floorMode; // 0=Bloom ONでカメラ背景に映す / 1=Bloom OFFでフラット塗り

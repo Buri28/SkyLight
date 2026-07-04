@@ -72,6 +72,34 @@ namespace SkyLight.Controllers.Gameplay
             EnsureDome(Layer, scale);
             Apply();
 
+            // 診断: Build()の瞬間に実際に存在する「Bloom/Skybox」関連レンダラーを、hintの一致有無に関係なく列挙する。
+            Plugin.DebugInfo(() =>
+            {
+                var sb = new System.Text.StringBuilder();
+                sb.AppendLine($"[SkyLight][dome][check] RenderSettings.skybox={(RenderSettings.skybox == null ? "null" : RenderSettings.skybox.shader.name)}");
+                foreach (var c in Camera.allCameras)
+                {
+                    if (c == null) continue;
+                    sb.AppendLine($"  cam '{c.name}' clearFlags={c.clearFlags} bg={c.backgroundColor} depth={c.depth} targetTex={c.targetTexture != null}");
+                }
+                sb.AppendLine("[SkyLight][dome][check] Bloom/Skybox-shader renderers at Build() time:");
+                foreach (var r in all)
+                {
+                    if (r == null) continue;
+                    foreach (var m in r.sharedMaterials)
+                    {
+                        if (m == null || m.shader == null) continue;
+                        if (m.shader.name.IndexOf("Bloom", System.StringComparison.OrdinalIgnoreCase) < 0 &&
+                            m.shader.name.IndexOf("Skybox", System.StringComparison.OrdinalIgnoreCase) < 0) continue;
+                        sb.AppendLine($"  '{r.gameObject.name}' layer={r.gameObject.layer}({LayerMask.LayerToName(r.gameObject.layer)}) " +
+                                      $"enabled={r.enabled} activeInHierarchy={r.gameObject.activeInHierarchy} " +
+                                      $"shader={m.shader.name} queue={m.renderQueue} pos={r.transform.position} bounds={r.bounds.size}");
+                        break;
+                    }
+                }
+                return sb.ToString();
+            });
+
             if (!_logged)
             {
                 Plugin.DebugInfo(() => $"[SkyLight][dome] camera={(cam != null ? cam.name : "null")} hiddenQuads={_hidden.Count} scale={scale} transparentMode={_transparentMode}");
