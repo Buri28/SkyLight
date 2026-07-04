@@ -51,6 +51,9 @@ namespace SkyLight.Configuration
         public virtual float FloorBrightness { get; set; } = 1.0f;
         public virtual float FloorAlpha { get; set; } = 1.0f;
         public virtual string FloorPaintShaderHint { get; set; } = "Mirror";
+        // true: 反射(Mirror)を使わず常に床へ直接フラット塗りする（Bloom ON/OFF問わず）。
+        // 新しい背景ドームが反射に映り込んで床が2色に割れる問題を避けたい場合はこちらを使う。
+        public virtual bool FloorDirectPaint { get; set; } = false;
         public virtual string SideLaneHints { get; set; } = "TrackConstruction;FloorConstruction;TrackLane;Lane;Road";
 
         // ─── 構造物（黒いシルエットの構造物。名前/シェーダーで対象指定） ───────────────────

@@ -132,7 +132,7 @@ namespace SkyLight.Controllers.Gameplay
             // 床の色は FloorColor。塗り方が Bloom で違う：
             //  ① Bloom ON  → メインカメラの backgroundColor を FloorColor にする（ミラーが反射＝床に映る・直接背景は据え置きで白飛びしない）。Apply() で処理。
             //  ② Bloom OFF → 床に直接フラット塗り。
-            int wantFloorMode = (_config.PaintFloor && _config.ShowFloor && !bloomOn) ? 1 : 0;
+            int wantFloorMode = (_config.PaintFloor && _config.ShowFloor && (!bloomOn || _config.FloorDirectPaint)) ? 1 : 0;
             if (wantFloorMode != _floorMode)
             {
                 _floorFlat.Restore();
@@ -387,7 +387,7 @@ namespace SkyLight.Controllers.Gameplay
         private void ApplyCameraBackground()
         {
             bool bloomOn = IsBloomOn();
-            if (bloomOn && _config.PaintFloor && _config.ShowFloor)
+            if (bloomOn && _config.PaintFloor && _config.ShowFloor && !_config.FloorDirectPaint)
                 SetGameplayCameraBackgroundColor(MakeColor(_config.FloorColor, _config.FloorBrightness, 1f, new Color(0.13f, 0.16f, 0.19f)));
         }
 

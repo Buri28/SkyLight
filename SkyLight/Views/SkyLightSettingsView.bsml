@@ -137,6 +137,12 @@
                        min='0' max='1' increment='0.05'
                        hover-hint='Opacity of the floor. Lower = more see-through AND dimmer, so it glows less with Bloom ON.' />
 
+    <toggle-setting text='　Floor Direct Paint (no reflection)'
+                    value='floor-direct-paint'
+                    apply-on-change='true'
+                    bind-value='true'
+                    hover-hint='ON = stop using the reflective Mirror floor and paint it flat directly, even with Bloom ON. Use this if a custom background makes the reflected floor split into different colors.' />
+
     <!-- ───────── Side Lanes ───────── -->
     <horizontal spacing='1' pad='0' pad-top='1'>
             <text text='[Side Lanes]' color='#7FB5FF' />
