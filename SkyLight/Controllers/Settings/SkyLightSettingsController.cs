@@ -109,6 +109,13 @@ namespace SkyLight.Controllers.Settings
             set { _config.FloorAlpha = value; _config.Changed(); }
         }
 
+        [UIValue("floor-direct-paint")]
+        public bool FloorDirectPaint
+        {
+            get => _config.FloorDirectPaint;
+            set { _config.FloorDirectPaint = value; _config.Changed(); }
+        }
+
         [UIValue("paint-structures")]
         public bool PaintStructures
         {
@@ -233,6 +240,7 @@ namespace SkyLight.Controllers.Settings
             _config.FloorColor = d.FloorColor;
             _config.FloorBrightness = d.FloorBrightness;
             _config.FloorAlpha = d.FloorAlpha;
+            _config.FloorDirectPaint = d.FloorDirectPaint;
             _config.ShowStructures = d.ShowStructures;
             _config.PaintStructures = d.PaintStructures;
             _config.StructureColorize = d.StructureColorize;
@@ -267,6 +275,7 @@ namespace SkyLight.Controllers.Settings
             NotifyPropertyChanged(nameof(FloorColor));
             NotifyPropertyChanged(nameof(FloorBrightness));
             NotifyPropertyChanged(nameof(FloorAlpha));
+            NotifyPropertyChanged(nameof(FloorDirectPaint));
             NotifyPropertyChanged(nameof(ShowStructures));
             NotifyPropertyChanged(nameof(PaintStructures));
             NotifyPropertyChanged(nameof(StructureColorize));
