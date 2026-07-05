@@ -79,20 +79,19 @@ namespace SkyLight.Controllers.Gameplay
             Plugin.DebugLog("[SkyLight] Applied on gameplay scene (paint deferred to ~1s).");
         }
 
-        // LateTick（Update 後・描画前）。毎フレームは軽い2つだけ：
-        //   ・Bloom の強制OFF維持（ライト演出で再有効化されても白飛びさせない）
-        //   ・カメラ背景の維持（反射床の色。キャッシュ済みで変化時のみ代入＝ほぼ無コスト）
-        // 重い塗り（ApplyMode：FindObjectsOfType を含む）は、対象が出揃う約1秒後に1回だけ実行する。
+        // LateTick（Update 後・描画前）。毎フレームは Bloom の強制OFF維持だけ（ライト演出で再有効化されても
+        // 白飛びさせないため、対象のenabledを確認するだけの軽い処理）。
+        // カメラ背景・重い塗り（ApplyMode：FindObjectsOfType を含む）は、起動直後と約1秒後の2回だけ実行する。
         public void LateTick()
         {
             if (!_active) return;
             _frame++;
 
             _bloomTamer.Reassert(!IsBloomOn());
-            ApplyCameraBackground();
 
             if (!_isFirstApply && _frame % 60 == 0)
             {
+                ApplyCameraBackground(); // CustomPlatforms等の非同期ロードで戻された場合に備え、もう一度だけ適用
                 ApplyMode(); // 後から出現する対象（リング等）も拾って塗る
                 _isFirstApply = true;
             }
