@@ -27,7 +27,14 @@ namespace SkyLight.Controllers.Gameplay
         // 構造物・バー・リングは半透明で着色するペインター。
         private readonly TargetPainter _structures = new("struct", excludeFloorLike: true);
         private readonly TargetPainter _bars = new("bars");
-        private readonly TargetPainter _ring = new("ring");
+        // リングは曲の間ずっと新規に出現し続けるため、他と違って「出揃った」判定をせず毎回スキャンし続ける。
+        private readonly TargetPainter _ring = new("ring", neverSettle: true);
+        // GlowLineL/R 等、NeonLightレイヤー(13)に属さない光る線。HideNeonと連動して隠す。
+        private readonly TargetPainter _glowLines = new("glowline");
+        private bool _glowLinesCollected;
+        // NeonLightレイヤーのRendererを直接無効化する保険（cullingMaskがBloom専用パスに効かない場合の対策）。
+        private readonly TargetPainter _neonRenderers = new("neon-renderers");
+        private bool _neonRenderersCollected;
 
         private bool _active;
         private int _frame;
@@ -109,6 +116,14 @@ namespace SkyLight.Controllers.Gameplay
 
         private void ApplyMode()
         {
+            // 診断: Initialize()時点だと実環境がまだ読み込み切っていないことがあるため、
+            // 本塗りと同じこのタイミング(約1秒後)でも再度ダンプする（DumpSceneのときだけ）。
+            if (_config.DebugLogging && _config.DumpScene)
+            {
+                try { SceneDiagnostics.Dump(); }
+                catch (Exception ex) { Plugin.Log.Warn($"[SkyLight] Scene dump (ApplyMode) failed: {ex.Message}"); }
+            }
+
             // Bloom の強制OFFは LateTick が毎フレーム行うのでここでは触らない。
             bool bloomOn = IsBloomOn();
             bool useBackdrop = _config.RecolorBackground;
@@ -192,6 +207,24 @@ namespace SkyLight.Controllers.Gameplay
                     if (kv.Key != null) kv.Key.cullingMask = kv.Value;
                 _neonCamMasks.Clear();
             }
+
+            // GlowLineL/R 等、NeonLightレイヤーに属さない光る線はレイヤー除外が効かないので、
+            // 名前一致で個別に収集して表示/非表示を切り替える。
+            if (!_glowLinesCollected)
+            {
+                _glowLines.Collect("GlowLine", "", disableMirror: false, colorize: false);
+                _glowLinesCollected = true;
+            }
+            _glowLines.SetVisible(!_config.HideNeon);
+
+            // 保険: cullingMask除外がBloom専用パスに効かないケースに備え、NeonLightレイヤーの
+            // Renderer自体も直接無効化する（GlowLine同様、こちらは色を塗らず表示/非表示のみ）。
+            if (!_neonRenderersCollected)
+            {
+                _neonRenderers.CollectByLayer(_neonLayer);
+                _neonRenderersCollected = true;
+            }
+            _neonRenderers.SetVisible(!_config.HideNeon);
         }
 
         private void UpdateTarget(TargetPainter p, bool want, ref bool painted, string hints, string exclude, bool disableMirror, bool colorize, Color rgba)
@@ -366,6 +399,8 @@ namespace SkyLight.Controllers.Gameplay
             _structures.Restore();
             _bars.Restore();
             _ring.Restore();
+            _glowLines.Restore();
+            _neonRenderers.Restore();
             _domeBuilt = false;
             _floorMode = 0;
             _floorPainted = false;
@@ -373,6 +408,8 @@ namespace SkyLight.Controllers.Gameplay
             _structPainted = false;
             _barsPainted = false;
             _ringPainted = false;
+            _glowLinesCollected = false;
+            _neonRenderersCollected = false;
             GC.SuppressFinalize(this);
         }
 

@@ -52,12 +52,23 @@ namespace SkyLight.Controllers.Gameplay
             }
 
             EnsureMaterial(color);
-            EnsureDome(0, scale);
+            if (_transparentMode)
+            {
+                // 透過モードは実際に奥の景色とブレンドする必要があるので、立体のドームが要る。
+                EnsureDome(0, scale);
+            }
+            else if (_dome != null)
+            {
+                // 不透明モードはカメラの backgroundColor（Controller側の FillCameraBackgrounds）だけで
+                // 同じ見た目になるため、ドームの描画は不要。前回まで作っていたら片付ける。
+                Object.Destroy(_dome);
+                _dome = null;
+            }
             Apply();
 
             if (!_logged)
             {
-                Plugin.DebugInfo(() => $"[SkyLight][dome] camera={(cam != null ? cam.name : "null")} hiddenQuads={_hidden.Count} scale={scale} transparentMode={_transparentMode}");
+                Plugin.DebugInfo(() => $"[SkyLight][dome] camera={(cam != null ? cam.name : "null")} hiddenQuads={_hidden.Count} scale={scale} transparentMode={_transparentMode} domeMesh={_dome != null}");
                 _logged = true;
             }
         }

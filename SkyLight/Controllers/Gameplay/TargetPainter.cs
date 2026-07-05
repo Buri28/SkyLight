@@ -30,13 +30,16 @@ namespace SkyLight.Controllers.Gameplay
         private int _emptyRefreshes;   // 連続で「新規ゼロ」だった Refresh 回数
         private bool _refreshSettled;  // 対象が出揃ったら探索(FindObjectsOfType)を止める
         private bool _logged;
+        private bool _hiding;          // SetVisible(false)で非表示状態にしているか（RefreshByLayerが新規分も揃えるため）
+        private readonly bool _neverSettle; // リング等、曲の間ずっと新規出現し続ける対象は「出揃った」判定をしない
 
-        public TargetPainter(string tag, bool alwaysReassign = false, bool excludeFloorLike = false, bool writeDepth = false)
+        public TargetPainter(string tag, bool alwaysReassign = false, bool excludeFloorLike = false, bool writeDepth = false, bool neverSettle = false)
         {
             _tag = tag;
             _alwaysReassign = alwaysReassign;
             _excludeFloorLike = excludeFloorLike;
             _writeDepth = writeDepth;
+            _neverSettle = neverSettle;
         }
 
         // hints / excludeHints: ';' 区切り。名前 または シェーダー名に部分一致で対象/除外。
@@ -62,9 +65,71 @@ namespace SkyLight.Controllers.Gameplay
                 _ids.Add(r.GetInstanceID());
                 _painted.Add((r, r.sharedMaterials));
                 DisableMirrorsOn(r, disableMirror);
+                DisableBloomPrePassOn(r);
             }
 
             LogOnce();
+        }
+
+        // 指定レイヤーのレンダラーを丸ごと収集する（色は塗らず、表示/非表示の切り替え専用）。
+        // cullingMaskによるレイヤー除外がBloom等の専用パスに効かない場合の保険として、
+        // Rendererコンポーネント自体を直接無効化するために使う。
+        public void CollectByLayer(int layer)
+        {
+            _painted.Clear();
+            _ids.Clear();
+
+            foreach (var r in UnityEngine.Object.FindObjectsOfType<Renderer>())
+            {
+                if (r == null || r.gameObject.layer != layer) continue;
+                _ids.Add(r.GetInstanceID());
+                _painted.Add((r, r.sharedMaterials));
+                DisableBloomPrePassOn(r);
+            }
+
+            LogOnce();
+        }
+
+        // ライトショー演出等で後から対象レイヤーへ切り替わるレンダラーを増分で拾う。
+        // 既に非表示中(SetVisible(false)済み)なら、新規追加分もその場で即座に非表示化する。
+        public void RefreshByLayer(int layer)
+        {
+            if (_refreshSettled) return;
+            int before = _painted.Count;
+            foreach (var r in UnityEngine.Object.FindObjectsOfType<Renderer>())
+            {
+                if (r == null || r.gameObject.layer != layer) continue;
+                if (!_ids.Add(r.GetInstanceID())) continue;
+                _painted.Add((r, r.sharedMaterials));
+                DisableBloomPrePassOn(r);
+                if (_hiding && r.enabled)
+                {
+                    _hiddenRenderers.Add((r, true));
+                    r.enabled = false;
+                }
+            }
+
+            if (_painted.Count > before)
+                _emptyRefreshes = 0;
+            else if (++_emptyRefreshes >= 6)
+                _refreshSettled = true;
+        }
+
+        // BakedBloom(Parametric3SliceSprite)の親には TubeBloomPrePassLight(WithId) が付いており、
+        // Rendererのenabledとは無関係に専用の描画パスでネオン管の光を描いている。
+        // これがRenderer無効化だけでは消えない「残光」の正体なので、コンポーネント自体を無効化する。
+        private void DisableBloomPrePassOn(Renderer r)
+        {
+            var parent = r.transform.parent;
+            if (parent == null) return;
+            foreach (var comp in parent.GetComponents<Behaviour>())
+            {
+                if (comp == null) continue;
+                if (comp.GetType().Name.IndexOf("BloomPrePassLight", StringComparison.OrdinalIgnoreCase) < 0) continue;
+                if (_disabledMirrors.Any(d => d.b == comp)) continue;
+                _disabledMirrors.Add((comp, comp.enabled));
+                comp.enabled = false;
+            }
         }
 
         // 後から出現した対象を増分で追加する（リング等は再生開始から少し遅れて現れる/動くため）。
@@ -83,6 +148,14 @@ namespace SkyLight.Controllers.Gameplay
                 if (!_ids.Add(r.GetInstanceID())) continue; // 既知はスキップ
                 _painted.Add((r, r.sharedMaterials));
                 DisableMirrorsOn(r, disableMirror);
+                DisableBloomPrePassOn(r);
+                // 非表示中(SetVisible(false)済み)なら、新規に見つかった分もその場で即座に非表示化する
+                // （リング等、曲の間ずっと新規に出現し続ける対象で必要）。
+                if (_hiding && r.enabled)
+                {
+                    _hiddenRenderers.Add((r, true));
+                    r.enabled = false;
+                }
             }
 
             // 新規が増えたら塗り直し（代入し直して新規にも適用する）。
@@ -97,7 +170,7 @@ namespace SkyLight.Controllers.Gameplay
                     return $"[SkyLight][{_tag}] refresh added {_painted.Count - before} (total {_painted.Count}) names=[{string.Join(", ", added)}]";
                 });
             }
-            else if (++_emptyRefreshes >= 6)
+            else if (!_neverSettle && ++_emptyRefreshes >= 6)
             {
                 // 連続6回(=約6秒)新規ゼロなら出揃ったとみなして探索を停止（以降 FindObjectsOfType を回さない）。
                 _refreshSettled = true;
@@ -169,8 +242,25 @@ namespace SkyLight.Controllers.Gameplay
             _assigned = true;
         }
 
+        // レーザー/ネオンは譜面のライトショーに連動してゲーム側が毎フレーム enabled を操作することがあるため、
+        // 1回の無効化だけでは点灯イベントの度に復活してしまう。非表示にしている間、毎フレーム軽量に
+        // enabled=false へ戻す（既に false なら何もしないので、点灯していない限りほぼゼロコスト）。
+        public void ReassertHidden()
+        {
+            if (_hiddenRenderers.Count == 0) return;
+            foreach (var (renderer, _) in _hiddenRenderers)
+                if (renderer != null && renderer.enabled) renderer.enabled = false;
+        }
+
+        // 診断用: 収集済みのうち、まだ enabled=true のままのレンダラー数（0でなければ非表示化漏れ）。
+        public int DebugCountEnabled() => _painted.Count(p => p.renderer != null && p.renderer.enabled);
+
+        // visible=false は Renderer を無効化する。
+        // 破棄(Destroy)も試したが、Spectrogram等 同じGameObject上のスクリプトが破棄後のRendererを
+        // 参照し続けて毎フレーム例外を吐く事例があったため、安全な無効化のみに戻した。
         public void SetVisible(bool visible)
         {
+            _hiding = !visible;
             if (visible)
             {
                 foreach (var (renderer, origEnabled) in _hiddenRenderers)
@@ -273,6 +363,7 @@ namespace SkyLight.Controllers.Gameplay
             _emptyRefreshes = 0;
             _refreshSettled = false;
             _logged = false;
+            _hiding = false;
         }
 
         private void EnsureMaterial(Color rgba)
