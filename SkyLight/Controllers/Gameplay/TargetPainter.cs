@@ -277,7 +277,16 @@ namespace SkyLight.Controllers.Gameplay
 
         private void EnsureMaterial(Color rgba)
         {
-            if (_mat != null) { _mat.SetColor("_Color", rgba); return; }
+            // 半透明(alpha<1)のときに深度を書き込むと、色は透けて見えても奥のオブジェクト（他Mod製の
+            // カウンター等）を不透明として遮ってしまう。深度書き込みは完全不透明のときだけ行う。
+            bool writeDepthNow = _writeDepth && rgba.a >= 0.999f;
+
+            if (_mat != null)
+            {
+                _mat.SetColor("_Color", rgba);
+                _mat.SetInt("_ZWrite", writeDepthNow ? 1 : 0);
+                return;
+            }
 
             var shader = Shader.Find("Hidden/Internal-Colored");
             if (shader == null)
@@ -291,7 +300,7 @@ namespace SkyLight.Controllers.Gameplay
             _mat.SetInt("_SrcBlend", (int)BlendMode.SrcAlpha);
             _mat.SetInt("_DstBlend", (int)BlendMode.OneMinusSrcAlpha);
             _mat.SetInt("_Cull", (int)CullMode.Off);
-            _mat.SetInt("_ZWrite", _writeDepth ? 1 : 0);
+            _mat.SetInt("_ZWrite", writeDepthNow ? 1 : 0);
             _mat.renderQueue = (int)RenderQueue.Transparent;
         }
 
