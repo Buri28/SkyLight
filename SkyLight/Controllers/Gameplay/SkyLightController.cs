@@ -91,8 +91,10 @@ namespace SkyLight.Controllers.Gameplay
 
             if (!_isFirstApply && _frame % 60 == 0)
             {
-                ApplyCameraBackground(); // CustomPlatforms等の非同期ロードで戻された場合に備え、もう一度だけ適用
+                // 順序が重要: ApplyMode 内の FillCameraBackgrounds が背景ドームの色でカメラ背景を
+                // 上書きするため、床の色(ApplyCameraBackground)は必ずその後に適用して確定させる。
                 ApplyMode(); // 後から出現する対象（リング等）も拾って塗る
+                ApplyCameraBackground();
                 _isFirstApply = true;
             }
         }
