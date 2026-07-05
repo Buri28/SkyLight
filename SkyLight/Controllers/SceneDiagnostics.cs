@@ -21,6 +21,51 @@ namespace SkyLight.Controllers
             DumpLights();
             DumpSceneRoots();
             DumpPlatformComponents();
+            DumpFarCenterRenderers();
+            DumpBakedBloomComponents();
+        }
+
+        // BakedBloomはBloomSkyboxQuadと同様、Rendererを無効化しても専用スクリプトが直接描画して
+        // 消えないケースを疑い、GameObject本体と親についている全コンポーネント（Rendererに限らず）を洗い出す。
+        private static void DumpBakedBloomComponents()
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("[SkyLight][diag] === BakedBloom GameObject components (self + parent) ===");
+            var seen = new HashSet<int>();
+            foreach (var r in Object.FindObjectsOfType<Renderer>())
+            {
+                if (r == null) continue;
+                if (r.gameObject.name.IndexOf("BakedBloom", System.StringComparison.OrdinalIgnoreCase) < 0) continue;
+                if (!seen.Add(r.gameObject.GetInstanceID())) continue;
+                if (seen.Count > 3) break; // 代表例だけで十分
+
+                sb.AppendLine($"  '{GetPath(r.transform)}':");
+                foreach (var c in r.gameObject.GetComponents<Component>())
+                    sb.AppendLine($"    self:   {c.GetType().FullName}");
+                if (r.transform.parent != null)
+                    foreach (var c in r.transform.parent.GetComponents<Component>())
+                        sb.AppendLine($"    parent: {c.GetType().FullName}");
+            }
+            Plugin.Log.Info(sb.ToString());
+        }
+
+        // 名前/シェーダーで絞り込まず、トラック中心軸に近く(|x|<15)、奥にある(z>40)レンダラーを
+        // 全部列挙する（消失点付近に見える正体不明の光の特定用）。enabled状態も出す。
+        private static void DumpFarCenterRenderers()
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("[SkyLight][diag] === Far-center renderers (|x|<15, z>40) ===");
+            var candidates = Object.FindObjectsOfType<Renderer>()
+                .Where(r => r != null && Mathf.Abs(r.bounds.center.x) < 15f && r.bounds.center.z > 40f)
+                .OrderBy(r => r.bounds.center.z);
+            foreach (var r in candidates)
+            {
+                var b = r.bounds;
+                var shaders = string.Join(",", r.sharedMaterials.Where(m => m != null && m.shader != null).Select(m => m.shader.name).Distinct());
+                sb.AppendLine($"  '{GetPath(r.transform)}' enabled={r.enabled} activeInHierarchy={r.gameObject.activeInHierarchy} " +
+                              $"layer={r.gameObject.layer}({LayerMask.LayerToName(r.gameObject.layer)}) center={b.center} size={b.size} shaders=[{shaders}]");
+            }
+            Plugin.Log.Info(sb.ToString());
         }
 
         // カスタムプラットフォームは通常シーンの別ルート(GameObjectの最上位祖先)にまるごとぶら下がる。
