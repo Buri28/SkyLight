@@ -36,6 +36,7 @@
                            options='preset-options'
                            apply-on-change='true'
                            bind-value='true'
+                           on-change='select-preset'
                            hover-hint='Saved presets in UserData/SkyLight/. Pick one and press Load.' />
 
     <horizontal spacing='1' pad='0'>

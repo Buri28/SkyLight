@@ -27,19 +27,16 @@ namespace SkyLight.Controllers.Gameplay
         private readonly bool _excludeFloorLike; // 構造物判定から床状の広い平面を除外する
         private readonly bool _writeDepth; // 床のように後ろへ色が抜けないよう深度を書き込む
         private readonly HashSet<int> _ids = new(); // 収集済みレンダラーの InstanceID（増分収集の重複防止）
-        private int _emptyRefreshes;   // 連続で「新規ゼロ」だった Refresh 回数
-        private bool _refreshSettled;  // 対象が出揃ったら探索(FindObjectsOfType)を止める
+        private bool _refreshSettled;  // Refresh は初回の1回だけ。以降は探索(FindObjectsOfType)を一切行わない
         private bool _logged;
         private bool _hiding;          // SetVisible(false)で非表示状態にしているか（RefreshByLayerが新規分も揃えるため）
-        private readonly bool _neverSettle; // リング等、曲の間ずっと新規出現し続ける対象は「出揃った」判定をしない
 
-        public TargetPainter(string tag, bool alwaysReassign = false, bool excludeFloorLike = false, bool writeDepth = false, bool neverSettle = false)
+        public TargetPainter(string tag, bool alwaysReassign = false, bool excludeFloorLike = false, bool writeDepth = false)
         {
             _tag = tag;
             _alwaysReassign = alwaysReassign;
             _excludeFloorLike = excludeFloorLike;
             _writeDepth = writeDepth;
-            _neverSettle = neverSettle;
         }
 
         // hints / excludeHints: ';' 区切り。名前 または シェーダー名に部分一致で対象/除外。
@@ -52,7 +49,6 @@ namespace SkyLight.Controllers.Gameplay
             _assigned = false;
             _clonesAssigned = false;
             _lastColor = new Color(-1f, -1f, -1f, -1f);
-            _emptyRefreshes = 0;
             _refreshSettled = false;
 
             var hintArr = Split(hints);
@@ -95,7 +91,6 @@ namespace SkyLight.Controllers.Gameplay
         public void RefreshByLayer(int layer)
         {
             if (_refreshSettled) return;
-            int before = _painted.Count;
             foreach (var r in UnityEngine.Object.FindObjectsOfType<Renderer>())
             {
                 if (r == null || r.gameObject.layer != layer) continue;
@@ -109,10 +104,8 @@ namespace SkyLight.Controllers.Gameplay
                 }
             }
 
-            if (_painted.Count > before)
-                _emptyRefreshes = 0;
-            else if (++_emptyRefreshes >= 6)
-                _refreshSettled = true;
+            // 探索は初回の1回だけ。以降は完全に何もしない。
+            _refreshSettled = true;
         }
 
         // BakedBloom(Parametric3SliceSprite)の親には TubeBloomPrePassLight(WithId) が付いており、
@@ -132,11 +125,11 @@ namespace SkyLight.Controllers.Gameplay
             }
         }
 
-        // 後から出現した対象を増分で追加する（リング等は再生開始から少し遅れて現れる/動くため）。
-        // 既存の塗りは保持し、新規が見つかったら次の Apply で塗り直す。
+        // 後から出現した対象を増分で追加する（リング等は再生開始から少し遅れて現れるため）。
+        // 実行は Collect 後の1回だけ。以降は完全に何もしない。
         public void Refresh(string hints, string excludeHints, bool disableMirror)
         {
-            if (_refreshSettled) return; // 対象が出揃ったら探索しない（FindObjectsOfType を回さない）
+            if (_refreshSettled) return; // 2回目以降は探索しない（FindObjectsOfType を回さない）
             var hintArr = Split(hints);
             if (hintArr.Length == 0) return;
             var exArr = Split(excludeHints);
@@ -163,18 +156,15 @@ namespace SkyLight.Controllers.Gameplay
             {
                 _assigned = false;
                 _clonesAssigned = false;
-                _emptyRefreshes = 0;
                 Plugin.DebugInfo(() =>
                 {
                     var added = _painted.Skip(before).Take(8).Select(p => p.renderer != null ? p.renderer.gameObject.name : "?");
                     return $"[SkyLight][{_tag}] refresh added {_painted.Count - before} (total {_painted.Count}) names=[{string.Join(", ", added)}]";
                 });
             }
-            else if (!_neverSettle && ++_emptyRefreshes >= 6)
-            {
-                // 連続6回(=約6秒)新規ゼロなら出揃ったとみなして探索を停止（以降 FindObjectsOfType を回さない）。
-                _refreshSettled = true;
-            }
+
+            // 探索は Collect 後の1回だけ。以降は完全に何もしない。
+            _refreshSettled = true;
         }
 
         private bool Matches(Renderer r, string[] hintArr, string[] exArr)
@@ -360,7 +350,6 @@ namespace SkyLight.Controllers.Gameplay
             _assigned = false;
             _clonesAssigned = false;
             _lastColor = new Color(-1f, -1f, -1f, -1f);
-            _emptyRefreshes = 0;
             _refreshSettled = false;
             _logged = false;
             _hiding = false;

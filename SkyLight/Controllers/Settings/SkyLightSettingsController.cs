@@ -336,6 +336,14 @@ namespace SkyLight.Controllers.Settings
             }
         }
 
+        // ドロップダウンの選択が変わったら、Save As欄に選択中の名前を反映する（更新時の再入力を不要にする）。
+        [UIAction("select-preset")]
+        private void SelectPreset(string value)
+        {
+            PresetName = value == NoPreset ? "" : value;
+            NotifyPropertyChanged(nameof(PresetName));
+        }
+
         // 選択中のプリセットを読み込み、全項目を画面へ反映する。
         [UIAction("load-preset")]
         private void LoadPreset()
@@ -356,9 +364,9 @@ namespace SkyLight.Controllers.Settings
             if (string.IsNullOrWhiteSpace(name) || name == NoPreset) return;
             if (PresetManager.Save(name, _config))
             {
-                PresetName = "";
-                NotifyPropertyChanged(nameof(PresetName));
                 RebuildPresetOptions(name);
+                PresetName = name;
+                NotifyPropertyChanged(nameof(PresetName));
                 NotifyPropertyChanged(nameof(PresetOptions));
                 NotifyPropertyChanged(nameof(PresetSelected));
             }
