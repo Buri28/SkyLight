@@ -142,8 +142,7 @@ namespace SkyLight.Controllers.Gameplay
                 _painted.Add((r, r.sharedMaterials));
                 DisableMirrorsOn(r, disableMirror);
                 DisableBloomPrePassOn(r);
-                // 非表示中(SetVisible(false)済み)なら、新規に見つかった分もその場で即座に非表示化する
-                // （リング等、曲の間ずっと新規に出現し続ける対象で必要）。
+                // 非表示中(SetVisible(false)済み)なら、新規に見つかった分もその場で即座に非表示化する。
                 if (_hiding && r.enabled)
                 {
                     _hiddenRenderers.Add((r, true));
