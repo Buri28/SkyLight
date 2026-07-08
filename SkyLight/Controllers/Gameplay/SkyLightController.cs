@@ -28,7 +28,7 @@ namespace SkyLight.Controllers.Gameplay
         private readonly TargetPainter _structures = new("struct", excludeFloorLike: true);
         private readonly TargetPainter _bars = new("bars");
         // リングは曲の間ずっと新規に出現し続けるため、他と違って「出揃った」判定をせず毎回スキャンし続ける。
-        private readonly TargetPainter _ring = new("ring", neverSettle: true);
+        private readonly TargetPainter _ring = new("ring");
         // GlowLineL/R 等、NeonLightレイヤー(13)に属さない光る線。HideNeonと連動して隠す。
         private readonly TargetPainter _glowLines = new("glowline");
         private bool _glowLinesCollected;
@@ -105,8 +105,8 @@ namespace SkyLight.Controllers.Gameplay
         // 旧来の60だとそれより手前でドームが終わってしまい、床の奥側だけ元の(真っ黒な)背景が透けて見えていた。
         // ドームは無地の単色キューブなので大きくしても見た目は変わらない。カメラの far クリップ内で、
         // 実在するオブジェクトの最大奥行きより十分大きい値にする。
-        private const float DomeScale = 400f;
-        private const int TargetRefreshInterval = 60; // 約1秒ごとに後発の対象を増分収集（出揃ったら自動で停止）
+        private const float DomeScale = 1000f;
+        private const int TargetRefreshInterval = 60; // 開始約1秒後に一度だけ後発の対象を増分収集（以降は何もしない）
         private bool _domeBuilt;
         private int _floorMode; // 0=Bloom ONでカメラ背景に映す / 1=Bloom OFFでフラット塗り
         private bool _floorPainted;
