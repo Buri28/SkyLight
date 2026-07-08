@@ -242,7 +242,7 @@ namespace SkyLight.Controllers.Gameplay
             }
             if (painted)
             {
-                // 後から出現する対象（リング等は再生開始から少し遅れて現れる/動く）を増分で拾って塗る。
+                // リング等は再生開始から少し遅れて現れるため、開始約1秒後に一度だけ増分収集する（以降 Refresh は何もしない）。
                 if (_frame % TargetRefreshInterval == 0)
                     p.Refresh(hints, exclude, disableMirror);
                 p.Apply(rgba);
