@@ -111,11 +111,17 @@ namespace SkyLight.Controllers.Gameplay
         // BakedBloom(Parametric3SliceSprite)の親には TubeBloomPrePassLight(WithId) が付いており、
         // Rendererのenabledとは無関係に専用の描画パスでネオン管の光を描いている。
         // これがRenderer無効化だけでは消えない「残光」の正体なので、コンポーネント自体を無効化する。
+        // 紐づき先は親1階層とは限らないため、自分自身・全祖先・子孫までまとめて探す。
+        // Destroy は同じGameObject上の別スクリプトが破棄後の参照で毎フレーム例外を吐いた前例があるため使わない。
         private void DisableBloomPrePassOn(Renderer r)
         {
-            var parent = r.transform.parent;
-            if (parent == null) return;
-            foreach (var comp in parent.GetComponents<Behaviour>())
+            DisableBloomPrePassIn(r.GetComponentsInParent<Behaviour>(true));   // 自分自身＋全祖先
+            DisableBloomPrePassIn(r.GetComponentsInChildren<Behaviour>(true)); // 自分自身＋子孫
+        }
+
+        private void DisableBloomPrePassIn(Behaviour[] comps)
+        {
+            foreach (var comp in comps)
             {
                 if (comp == null) continue;
                 if (comp.GetType().Name.IndexOf("BloomPrePassLight", StringComparison.OrdinalIgnoreCase) < 0) continue;
