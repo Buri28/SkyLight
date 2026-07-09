@@ -77,7 +77,7 @@ namespace SkyLight.Controllers.Gameplay
 
             foreach (var r in UnityEngine.Object.FindObjectsOfType<Renderer>())
             {
-                if (r == null || r.gameObject.layer != layer) continue;
+                if (r == null || r.gameObject.layer != layer || IsMenuObject(r)) continue;
                 _ids.Add(r.GetInstanceID());
                 _painted.Add((r, r.sharedMaterials));
                 DisableBloomPrePassOn(r);
@@ -93,7 +93,7 @@ namespace SkyLight.Controllers.Gameplay
             if (_refreshSettled) return;
             foreach (var r in UnityEngine.Object.FindObjectsOfType<Renderer>())
             {
-                if (r == null || r.gameObject.layer != layer) continue;
+                if (r == null || r.gameObject.layer != layer || IsMenuObject(r)) continue;
                 if (!_ids.Add(r.GetInstanceID())) continue;
                 _painted.Add((r, r.sharedMaterials));
                 DisableBloomPrePassOn(r);
@@ -172,8 +172,18 @@ namespace SkyLight.Controllers.Gameplay
             _refreshSettled = true;
         }
 
+        // メニュー系シーン（MenuCore / MenuEnvironment / MenuViewControllers / MainMenu 等）に属する
+        // オブジェクトは触らない。プレイ中もこれらのシーンはロードされたまま残っており、
+        // 巻き添えで非表示・材質差し替えするとメニューへ戻った際の表示（スコアボードの文字等）が壊れる。
+        private static bool IsMenuObject(Renderer r)
+        {
+            var sceneName = r.gameObject.scene.name;
+            return sceneName != null && sceneName.IndexOf("Menu", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
         private bool Matches(Renderer r, string[] hintArr, string[] exArr)
         {
+            if (IsMenuObject(r)) return false;
             string name = r.gameObject.name;
             string path = GetPath(r.transform);
             var shaders = r.sharedMaterials.Where(m => m != null && m.shader != null).Select(m => m.shader.name).ToArray();

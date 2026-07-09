@@ -2,6 +2,7 @@ using SkyLight.Configuration;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using Zenject;
 
 namespace SkyLight.Controllers.Gameplay
@@ -62,9 +63,38 @@ namespace SkyLight.Controllers.Gameplay
         private bool IsBloomOn()
             => _config.Bloom && (!_config.RecolorBackground || _config.AllowBloomWithBackground);
 
+        // プレイ画面（GameCore シーン）がロードされているかどうか。
+        // メニュー等でこの MOD が動作しないようにするガード条件。
+        private static bool IsGameplaySceneLoaded()
+        {
+            for (int i = 0; i < SceneManager.sceneCount; i++)
+            {
+                var s = SceneManager.GetSceneAt(i);
+                if (s.isLoaded && s.name == "GameCore") return true;
+            }
+            return false;
+        }
+
+        // GameCore がアンロードされたら（＝プレイ終了でメニューへ戻る時点で）即座に全復元する。
+        // Zenject の Dispose より早いタイミングで確実に戻し、メニュー側への影響を残さない。
+        private void OnSceneUnloaded(Scene scene)
+        {
+            if (scene.name != "GameCore") return;
+            RestoreAll();
+        }
+
         public void Initialize()
         {
             if (!_config.Enabled) return;
+
+            // プレイ画面以外（メニュー等）では何もしない。
+            if (!IsGameplaySceneLoaded())
+            {
+                Plugin.DebugLog("[SkyLight] GameCore not loaded; skip applying (non-gameplay scene).");
+                return;
+            }
+
+            SceneManager.sceneUnloaded += OnSceneUnloaded;
 
             // 診断ダンプは DumpScene のときだけ（毎曲のオブジェクト走査コストを避ける）。
             if (_config.DebugLogging && _config.DumpScene)
@@ -414,6 +444,14 @@ namespace SkyLight.Controllers.Gameplay
 
         public void Dispose()
         {
+            SceneManager.sceneUnloaded -= OnSceneUnloaded;
+            RestoreAll();
+            GC.SuppressFinalize(this);
+        }
+
+        // 適用した変更をすべて元に戻す（GameCore アンロード時と Dispose の両方から呼ぶ。多重呼び出し安全）。
+        private void RestoreAll()
+        {
             if (_active)
                 RestoreOriginal();
 
@@ -437,7 +475,7 @@ namespace SkyLight.Controllers.Gameplay
             _ringPainted = false;
             _glowLinesCollected = false;
             _neonRenderersCollected = false;
-            GC.SuppressFinalize(this);
+            _isFirstApply = false;
         }
 
         // 背景ドームの色（hex×brightness）。Alpha=1で不透明置き換え、Alpha<1で本物の半透明ブレンド。
