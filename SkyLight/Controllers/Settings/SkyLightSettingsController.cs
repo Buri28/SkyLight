@@ -179,6 +179,28 @@ namespace SkyLight.Controllers.Settings
             set { _config.HideNeon = !value; _config.Changed(); }
         }
 
+        // ─── 任意オブジェクト非表示 ─────────────────────────────
+        [UIValue("hide-object-hints")]
+        public string HideObjectHints
+        {
+            get => _config.HideObjectHints;
+            set { _config.HideObjectHints = value; _config.Changed(); }
+        }
+
+        [UIValue("hide-object-exclude-hints")]
+        public string HideObjectExcludeHints
+        {
+            get => _config.HideObjectExcludeHints;
+            set { _config.HideObjectExcludeHints = value; _config.Changed(); }
+        }
+
+        [UIValue("dump-scene")]
+        public bool DumpScene
+        {
+            get => _config.DumpScene;
+            set { _config.DumpScene = value; _config.Changed(); }
+        }
+
         [UIValue("paint-ring")]
         public bool PaintRing
         {
@@ -256,6 +278,8 @@ namespace SkyLight.Controllers.Settings
             _config.RingColor = d.RingColor;
             _config.RingBrightness = d.RingBrightness;
             _config.RingAlpha = d.RingAlpha;
+            _config.HideObjectHints = d.HideObjectHints;
+            _config.HideObjectExcludeHints = d.HideObjectExcludeHints;
             _config.Changed();
             NotifyAllUi();
         }
@@ -289,6 +313,9 @@ namespace SkyLight.Controllers.Settings
             NotifyPropertyChanged(nameof(RingColor));
             NotifyPropertyChanged(nameof(RingBrightness));
             NotifyPropertyChanged(nameof(RingAlpha));
+            NotifyPropertyChanged(nameof(HideObjectHints));
+            NotifyPropertyChanged(nameof(HideObjectExcludeHints));
+            NotifyPropertyChanged(nameof(DumpScene));
         }
 
         // ───── Presets ─────────────────────────────────────────────

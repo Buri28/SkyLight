@@ -252,6 +252,29 @@
                        min='0' max='1' increment='0.05'
                        hover-hint='Opacity of the rings. Lower = more see-through.' />
 
+    <!-- ───────── Hide Objects ───────── -->
+    <horizontal spacing='1' pad='0' pad-top='1'>
+      <text text='[Hide Objects]' color='#FFD700' />
+    </horizontal>
+
+    <string-setting text='Hide Objects'
+                    value='hide-object-hints'
+                    apply-on-change='true'
+                    bind-value='true'
+                    hover-hint='Hide objects whose name matches (partial match, separate with ;). Find names: turn on Dump Scene, play a song, then check the log section "Hide candidates". Takes effect from the next song.' />
+
+    <string-setting text='　Exclude'
+                    value='hide-object-exclude-hints'
+                    apply-on-change='true'
+                    bind-value='true'
+                    hover-hint='Exceptions: objects matching these names stay visible even if they match Hide Objects.' />
+
+    <toggle-setting text='Dump Scene (log hide candidates)'
+                    value='dump-scene'
+                    apply-on-change='true'
+                    bind-value='true'
+                    hover-hint='Write scene diagnostics including the "Hide candidates" object list to the log at song start. Turn OFF when done.' />
+
     <!-- ───────── Reset ───────── -->
     <horizontal spacing='1' pad='0' pad-top='2'>
       <button text='Reset to Defaults' on-click='reset-settings' />
