@@ -35,6 +35,10 @@ namespace SkyLight.Controllers.Gameplay
         // NeonLightレイヤーのRendererを直接無効化する保険（cullingMaskがBloom専用パスに効かない場合の対策）。
         private readonly TargetPainter _neonRenderers = new("neon-renderers");
         private bool _neonRenderersCollected;
+        // ユーザー指定（HideObjectHints）のオブジェクトを非表示にする。
+        // 対象名は DumpScene ログの "Hide candidates" から拾って設定に追加する運用。
+        private readonly TargetPainter _hider = new("hide");
+        private string _hiderHints = "";
 
         private bool _active;
         private int _frame;
@@ -181,6 +185,26 @@ namespace SkyLight.Controllers.Gameplay
 
             // ネオン/レーザー(NeonLightレイヤー)の表示/非表示。横の動くネオンバー・水色ビームを消す。
             ApplyNeonVisibility();
+
+            // ユーザー指定オブジェクトの非表示（Hide Objects）。
+            ApplyHideObjects();
+        }
+
+        // HideObjectHints（; 区切りの部分一致）に一致するレンダラーを非表示にする。
+        // 収集はこの ApplyMode のタイミング（曲開始＋約1秒後）だけで、毎フレーム処理はしない。
+        private void ApplyHideObjects()
+        {
+            var hints = (_config.HideObjectHints ?? string.Empty).Trim();
+            if (hints != _hiderHints)
+            {
+                // ヒントが変わったら前回の非表示を戻してから収集し直す。
+                _hider.Restore();
+                _hiderHints = hints;
+                if (hints.Length > 0)
+                    _hider.Collect(hints, _config.HideObjectExcludeHints, disableMirror: false, colorize: false);
+            }
+            if (hints.Length > 0)
+                _hider.SetVisible(false);
         }
 
         // NeonLight レイヤー(13)を全カメラの cullingMask から外す/戻す。BloomPrePass のネオンは色塗り不可なので、
@@ -402,6 +426,8 @@ namespace SkyLight.Controllers.Gameplay
             _ring.Restore();
             _glowLines.Restore();
             _neonRenderers.Restore();
+            _hider.Restore();
+            _hiderHints = "";
             _domeBuilt = false;
             _floorMode = 0;
             _floorPainted = false;

@@ -23,6 +23,31 @@ namespace SkyLight.Controllers
             DumpPlatformComponents();
             DumpFarCenterRenderers();
             DumpBakedBloomComponents();
+            DumpHideCandidates();
+        }
+
+        // 「Hide Objects」設定用の候補一覧。現在表示中(enabled)の全レンダラーを名前ごとに集計して出す。
+        // ここに出た名前をそのまま設定の HideObjectHints（; 区切り）へコピーすれば非表示にできる。
+        private static void DumpHideCandidates()
+        {
+            var sb = new StringBuilder();
+            var groups = Object.FindObjectsOfType<Renderer>()
+                .Where(r => r != null && r.enabled && r.gameObject.activeInHierarchy)
+                .GroupBy(r => r.gameObject.name)
+                .OrderBy(g => g.Key);
+            var list = groups.ToList();
+            sb.AppendLine($"[SkyLight][diag] === Hide candidates ({list.Count} distinct names) ===");
+            sb.AppendLine("  copy a name below into Hide Objects (';' separated) to hide it");
+            foreach (var g in list)
+            {
+                var rep = g.First();
+                var shaders = string.Join(",", g.SelectMany(r => r.sharedMaterials)
+                    .Where(m => m != null && m.shader != null).Select(m => m.shader.name).Distinct());
+                var b = rep.bounds;
+                sb.AppendLine($"  name='{g.Key}' count={g.Count()} layer={rep.gameObject.layer}({LayerMask.LayerToName(rep.gameObject.layer)}) " +
+                              $"path='{GetPath(rep.transform)}' size=({b.size.x:0.#},{b.size.y:0.#},{b.size.z:0.#}) shaders=[{shaders}]");
+            }
+            Plugin.Log.Info(sb.ToString());
         }
 
         // BakedBloomはBloomSkyboxQuadと同様、Rendererを無効化しても専用スクリプトが直接描画して

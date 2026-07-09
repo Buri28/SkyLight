@@ -43,6 +43,13 @@ namespace SkyLight.Configuration
         // これらは BloomPrePass で描かれ色塗り不可のため、カメラの描画対象から外して隠す方式。
         public virtual bool HideNeon { get; set; } = false;
 
+        // ─── 任意オブジェクトの非表示 ───────────────────────────────
+        // 名前/パス/シェーダー名の部分一致（; 区切り）で対象を指定して非表示にする。
+        // 対象名の特定手順: DumpScene=true にして曲を開始 → ログの
+        // "[SkyLight][diag] === Hide candidates ===" から名前をコピーしてここに追加する。
+        public virtual string HideObjectHints { get; set; } = "";
+        public virtual string HideObjectExcludeHints { get; set; } = "";
+
         // ─── 床（反射床/Mirror） ───────────────────────────────
         public virtual bool ShowFloor { get; set; } = true;
         public virtual bool ShowSideLanes { get; set; } = true;
