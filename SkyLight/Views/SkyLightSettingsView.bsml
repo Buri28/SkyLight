@@ -19,11 +19,45 @@
                     bind-value='true'
                     hover-hint='Full-screen Bloom ON/OFF. ON = notes/lasers glow. Sky Background uses the non-bloom background path.' />
 
-        <toggle-setting text='Show Neon'
-            value='show-neon'
-                    apply-on-change='true'
-                    bind-value='true'
-            hover-hint='Show the NeonLight layer (moving neon bars / lasers / cyan beams). OFF hides them from the camera. Takes effect from the next song.' />
+    <!-- ───────── Show / Hide（表示/非表示のまとめ。2列で省スペース） ───────── -->
+    <horizontal spacing='1' pad='0' pad-top='1'>
+      <text text='[Show / Hide]' color='#90EE90' />
+    </horizontal>
+
+    <horizontal spacing='2' pad='0' pref-height='8' child-control-width='true' child-control-height='true' child-expand-width='true' child-expand-height='false'>
+      <toggle-setting text='Sky Background' pref-width='52' value='recolor-background' apply-on-change='true' bind-value='true'
+                      hover-hint='Hide the dark game background and wrap the view in a sky-colored dome. Synced with the [Background] section below.' />
+      <toggle-setting text='Floor' pref-width='52' value='show-floor' apply-on-change='true' bind-value='true'
+                      hover-hint='Show or hide the floor. Synced with the [Floor] section below.' />
+    </horizontal>
+
+    <horizontal spacing='2' pad='0' pref-height='8' child-control-width='true' child-control-height='true' child-expand-width='true' child-expand-height='false'>
+      <toggle-setting text='Structures' pref-width='52' value='show-structures' apply-on-change='true' bind-value='true'
+                      hover-hint='Show or hide matched structure objects. Synced with the [Structures] section below.' />
+      <toggle-setting text='Ring' pref-width='52' value='show-ring' apply-on-change='true' bind-value='true'
+                      hover-hint='Show or hide matched ring objects. Synced with the [Ring] section below.' />
+    </horizontal>
+
+    <horizontal spacing='2' pad='0' pref-height='8' child-control-width='true' child-control-height='true' child-expand-width='true' child-expand-height='false'>
+      <toggle-setting text='Neon' pref-width='52' value='show-neon' apply-on-change='true' bind-value='true'
+                      hover-hint='Show the NeonLight layer (moving neon bars / lasers / cyan beams). Takes effect from the next song.' />
+      <toggle-setting text='Bars' pref-width='52' value='show-bars' apply-on-change='true' bind-value='true'
+                      hover-hint='Show or hide Spectrogram bars.' />
+    </horizontal>
+
+    <horizontal spacing='2' pad='0' pref-height='8' child-control-width='true' child-control-height='true' child-expand-width='true' child-expand-height='false'>
+      <toggle-setting text='Side Lanes' pref-width='52' value='show-side-lanes' apply-on-change='true' bind-value='true'
+                      hover-hint='Show or hide the side lanes and track-side black strips beside the floor.' />
+      <toggle-setting text='Lights' pref-width='52' value='show-lights' apply-on-change='true' bind-value='true'
+                      hover-hint='Show or hide light objects (name contains "Light"). Takes effect from the next song.' />
+    </horizontal>
+
+    <horizontal spacing='2' pad='0' pref-height='8' child-control-width='true' child-control-height='true' child-expand-width='true' child-expand-height='false'>
+      <toggle-setting text='Logo' pref-width='52' value='show-logo' apply-on-change='true' bind-value='true'
+                      hover-hint='Show or hide environment logo objects (name contains "Logo"). Takes effect from the next song.' />
+      <toggle-setting text='Others' pref-width='52' value='show-other-structures' apply-on-change='true' bind-value='true'
+                      hover-hint='Show or hide misc environment objects (Window/Tunnel/Waterfall/Sun/Rain/Clouds/Smoke/Building/Mountain/Star etc.). Takes effect from the next song.' />
+    </horizontal>
 
     <!-- ───────── Presets ───────── -->
     <horizontal spacing='1' pad='0' pad-top='1'>
@@ -62,7 +96,7 @@
       <text text='[Background]' color='#FF8C00' />
     </horizontal>
 
-    <toggle-setting text='Sky Background'
+    <toggle-setting text='Show Sky Background'
                     value='recolor-background'
                     apply-on-change='true'
                     bind-value='true'
@@ -144,40 +178,6 @@
                     bind-value='true'
                     hover-hint='ON = stop using the reflective Mirror floor and paint it flat directly, even with Bloom ON. Use this if a custom background makes the reflected floor split into different colors.' />
 
-    <!-- ───────── Side Lanes ───────── -->
-    <horizontal spacing='1' pad='0' pad-top='1'>
-            <text text='[Side Lanes]' color='#7FB5FF' />
-    </horizontal>
-
-    <toggle-setting text='Show Side Lanes'
-                      value='show-side-lanes'
-                      apply-on-change='true'
-                      bind-value='true'
-                      hover-hint='Show or hide the side lanes and track-side black strips beside the floor.' />
-
-    <!-- ───────── Lights / Logo / Other Structures (show/hide only) ───────── -->
-    <horizontal spacing='1' pad='0' pad-top='1'>
-      <text text='[Lights / Logo / Others]' color='#FFB6C1' />
-    </horizontal>
-
-    <toggle-setting text='Show Lights'
-                    value='show-lights'
-                    apply-on-change='true'
-                    bind-value='true'
-                    hover-hint='Show or hide light objects (name contains "Light"). Takes effect from the next song.' />
-
-    <toggle-setting text='Show Logo'
-                    value='show-logo'
-                    apply-on-change='true'
-                    bind-value='true'
-                    hover-hint='Show or hide environment logo objects (name contains "Logo"). Takes effect from the next song.' />
-
-    <toggle-setting text='Show Other Structures'
-                    value='show-other-structures'
-                    apply-on-change='true'
-                    bind-value='true'
-                    hover-hint='Show or hide misc environment objects (Window/Tunnel/Waterfall/Sun/Rain/Clouds/Smoke/Building/Mountain/Star etc.). Takes effect from the next song.' />
-
     <!-- ───────── Structures ───────── -->
     <horizontal spacing='1' pad='0' pad-top='1'>
       <text text='[Structures]' color='#DDA0DD' />
@@ -220,17 +220,6 @@
                        bind-value='true'
                        min='0' max='1' increment='0.05'
                        hover-hint='Opacity of the structures. Lower = more see-through (original shows behind).' />
-
-    <!-- ───────── Bars ───────── -->
-    <horizontal spacing='1' pad='0' pad-top='1'>
-      <text text='[Bars]' color='#B0C4DE' />
-    </horizontal>
-
-    <toggle-setting text='Show Bars'
-            value='show-bars'
-            apply-on-change='true'
-            bind-value='true'
-            hover-hint='Show or hide Spectrogram bars independently from structures.' />
 
     <!-- ───────── Ring ───────── -->
     <horizontal spacing='1' pad='0' pad-top='1'>
