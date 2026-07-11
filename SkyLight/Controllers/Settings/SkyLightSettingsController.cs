@@ -88,6 +88,27 @@ namespace SkyLight.Controllers.Settings
             set { _config.ShowSideLanes = value; _config.Changed(); }
         }
 
+        [UIValue("show-lights")]
+        public bool ShowLights
+        {
+            get => _config.ShowLights;
+            set { _config.ShowLights = value; _config.Changed(); }
+        }
+
+        [UIValue("show-logo")]
+        public bool ShowLogo
+        {
+            get => _config.ShowLogo;
+            set { _config.ShowLogo = value; _config.Changed(); }
+        }
+
+        [UIValue("show-other-structures")]
+        public bool ShowOtherStructures
+        {
+            get => _config.ShowOtherStructures;
+            set { _config.ShowOtherStructures = value; _config.Changed(); }
+        }
+
         [UIValue("floor-color")]
         public Color FloorColor
         {
@@ -258,6 +279,9 @@ namespace SkyLight.Controllers.Settings
             _config.HideNeon = d.HideNeon;
             _config.ShowFloor = d.ShowFloor;
             _config.ShowSideLanes = d.ShowSideLanes;
+            _config.ShowLights = d.ShowLights;
+            _config.ShowLogo = d.ShowLogo;
+            _config.ShowOtherStructures = d.ShowOtherStructures;
             _config.PaintFloor = d.PaintFloor;
             _config.FloorColor = d.FloorColor;
             _config.FloorBrightness = d.FloorBrightness;
@@ -295,6 +319,9 @@ namespace SkyLight.Controllers.Settings
             NotifyPropertyChanged(nameof(ShowNeon));
             NotifyPropertyChanged(nameof(ShowFloor));
             NotifyPropertyChanged(nameof(ShowSideLanes));
+            NotifyPropertyChanged(nameof(ShowLights));
+            NotifyPropertyChanged(nameof(ShowLogo));
+            NotifyPropertyChanged(nameof(ShowOtherStructures));
             NotifyPropertyChanged(nameof(PaintFloor));
             NotifyPropertyChanged(nameof(FloorColor));
             NotifyPropertyChanged(nameof(FloorBrightness));

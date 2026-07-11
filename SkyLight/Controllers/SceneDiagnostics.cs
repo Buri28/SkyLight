@@ -23,32 +23,114 @@ namespace SkyLight.Controllers
             DumpPlatformComponents();
             DumpFarCenterRenderers();
             DumpBakedBloomComponents();
-            DumpHideCandidates();
         }
 
-        // 「Hide Objects」設定用の候補一覧。現在表示中(enabled)の全レンダラーを名前ごとに集計して出す。
+        // 「Hide Objects」設定用の候補一覧。現在の全レンダラーを名前ごとに集計して出す。
         // ここに出た名前をそのまま設定の HideObjectHints（; 区切り）へコピーすれば非表示にできる。
-        private static void DumpHideCandidates()
+        // 既に Hide Objects の対象/除外になっている名前や、他の設定（Bars/Neon/Ring等）で管理済みの
+        // 名前には行末に印を付けて、二重登録や巻き添えに気付けるようにする。
+        public static void DumpHideCandidates(Configuration.PluginConfig config)
         {
+            var hideArr = SplitHints(config.HideObjectHints);
+            var exArr = SplitHints(config.HideObjectExcludeHints);
+            var barArr = SplitHints(string.IsNullOrWhiteSpace(config.BarShaderHints) ? "Spectrogram" : config.BarShaderHints);
+            var barExArr = SplitHints(config.BarExcludeHints);
+            var ringArr = SplitHints(string.IsNullOrWhiteSpace(config.RingShaderHints) ? "Ring" : config.RingShaderHints);
+            var ringExArr = SplitHints(config.RingExcludeHints);
+            var laneArr = SplitHints(config.SideLaneHints);
+            var lightArr = SplitHints(config.LightHints);
+            var logoArr = SplitHints(config.LogoHints);
+            var otherArr = SplitHints(config.OtherStructureHints);
+            var structArr = SplitHints(config.StructureShaderHints);
+            var structExArr = SplitHints(config.StructureExcludeHints);
+            var structExOvArr = SplitHints(config.StructureExcludeOverrideHints);
+            int neonLayer = LayerMask.NameToLayer("NeonLight");
+
             var sb = new StringBuilder();
-            var groups = Object.FindObjectsOfType<Renderer>()
-                .Where(r => r != null && r.enabled && r.gameObject.activeInHierarchy)
+            var list = Object.FindObjectsOfType<Renderer>()
+                .Where(r => r != null && r.gameObject.activeInHierarchy)
                 .GroupBy(r => r.gameObject.name)
-                .OrderBy(g => g.Key);
-            var list = groups.ToList();
-            sb.AppendLine($"[SkyLight][diag] === Hide candidates ({list.Count} distinct names) ===");
+                .OrderBy(g => g.Key)
+                .ToList();
+            sb.AppendLine($"[SkyLight][diag] === Hide candidates ({list.Count} distinct names) env='{GetEnvironmentName()}' ===");
             sb.AppendLine("  copy a name below into Hide Objects (';' separated) to hide it");
             foreach (var g in list)
             {
                 var rep = g.First();
-                var shaders = string.Join(",", g.SelectMany(r => r.sharedMaterials)
-                    .Where(m => m != null && m.shader != null).Select(m => m.shader.name).Distinct());
+                string name = g.Key;
+                string path = GetPath(rep.transform);
+                var shaderList = g.SelectMany(r => r.sharedMaterials)
+                    .Where(m => m != null && m.shader != null).Select(m => m.shader.name).Distinct().ToArray();
+                var shaders = string.Join(",", shaderList);
                 var b = rep.bounds;
-                sb.AppendLine($"  name='{g.Key}' count={g.Count()} layer={rep.gameObject.layer}({LayerMask.LayerToName(rep.gameObject.layer)}) " +
-                              $"path='{GetPath(rep.transform)}' size=({b.size.x:0.#},{b.size.y:0.#},{b.size.z:0.#}) shaders=[{shaders}]");
+
+                // 現在の設定でどう扱われているかの印。一致したキーワードも出す（どの設定値が効いたか逆引き用）。
+                var tags = new List<string>();
+                string? hit;
+                if ((hit = FindMatch(name, path, shaderList, exArr)) != null) tags.Add($"EXCLUDED (HideObjectExcludeHints: '{hit}')");
+                else if ((hit = FindMatch(name, path, shaderList, hideArr)) != null) tags.Add($"HIDDEN (Hide Objects: '{hit}')");
+                if (rep.gameObject.layer == neonLayer) tags.Add(config.HideNeon ? "HIDDEN (Show Neon=OFF)" : "managed by Show Neon");
+                string? barHit = FindMatch(name, path, shaderList, barArr);
+                string? barExHit = FindMatch(name, path, shaderList, barExArr);
+                if (barExHit != null) tags.Add($"EXCLUDED (BarExcludeHints: '{barExHit}')");
+                else if (barHit != null) tags.Add(config.ShowBars ? $"managed by Show Bars ('{barHit}')" : $"HIDDEN (Show Bars=OFF: '{barHit}')");
+                string? ringHit = FindMatch(name, path, shaderList, ringArr);
+                string? ringExHit = FindMatch(name, path, shaderList, ringExArr);
+                if (ringExHit != null) tags.Add($"EXCLUDED (RingExcludeHints: '{ringExHit}')");
+                else if (ringHit != null) tags.Add(config.ShowRing ? $"managed by Show Ring ('{ringHit}')" : $"HIDDEN (Show Ring=OFF: '{ringHit}')");
+                if ((hit = FindMatch(name, path, shaderList, laneArr)) != null)
+                    tags.Add(config.ShowSideLanes ? $"managed by Side Lanes ('{hit}')" : $"HIDDEN (Side Lanes=OFF: '{hit}')");
+                if ((hit = FindMatch(name, path, shaderList, lightArr)) != null)
+                    tags.Add(config.ShowLights ? $"managed by Show Lights ('{hit}')" : $"HIDDEN (Show Lights=OFF: '{hit}')");
+                if ((hit = FindMatch(name, path, shaderList, logoArr)) != null)
+                    tags.Add(config.ShowLogo ? $"managed by Show Logo ('{hit}')" : $"HIDDEN (Show Logo=OFF: '{hit}')");
+                if ((hit = FindMatch(name, path, shaderList, otherArr)) != null)
+                    tags.Add(config.ShowOtherStructures ? $"managed by Other Structures ('{hit}')" : $"HIDDEN (Other Structures=OFF: '{hit}')");
+                string? structHit = FindMatch(name, path, shaderList, structArr);
+                string? structExHit = FindMatch(name, path, shaderList, structExArr);
+                string? structExOvHit = FindMatch(name, path, shaderList, structExOvArr);
+                // 除外に一致しても override に一致すれば対象に戻る（TargetPainter.Matches と同じ判定）。
+                if (structExHit != null && structExOvHit != null)
+                    tags.Add(config.ShowStructures
+                        ? $"managed by Structures (excluded by '{structExHit}' but overridden by StructureExcludeOverrideHints: '{structExOvHit}')"
+                        : $"HIDDEN (Show Structures=OFF, overridden by StructureExcludeOverrideHints: '{structExOvHit}')");
+                else if (structExHit != null) tags.Add($"EXCLUDED (StructureExcludeHints: '{structExHit}')");
+                else if (structHit != null)
+                    tags.Add(config.ShowStructures ? $"managed by Structures ('{structHit}')" : $"HIDDEN (Show Structures=OFF: '{structHit}')");
+                // どの設定にも該当しない＝現在表示中のオブジェクトは、隠す候補として「Show」印を付ける。
+                if (tags.Count == 0 && g.Any(r => r.enabled))
+                    tags.Add("SHOW");
+                string tag = tags.Count > 0 ? $"  <== {string.Join(" / ", tags)}" : "";
+
+                sb.AppendLine($"  name='{name}' count={g.Count()} layer={rep.gameObject.layer}({LayerMask.LayerToName(rep.gameObject.layer)}) " +
+                              $"path='{path}' size=({b.size.x:0.#},{b.size.y:0.#},{b.size.z:0.#}) shaders=[{shaders}]{tag}");
             }
             Plugin.Log.Info(sb.ToString());
         }
+
+        // 現在ロード中の環境シーン名（例: 'BTSEnvironment'）。環境ごとにオブジェクト名が違うため、
+        // どの環境でのダンプかをヘッダーに残す。見つからなければアクティブシーン名を返す。
+        private static string GetEnvironmentName()
+        {
+            for (int i = 0; i < UnityEngine.SceneManagement.SceneManager.sceneCount; i++)
+            {
+                var s = UnityEngine.SceneManagement.SceneManager.GetSceneAt(i);
+                if (s.isLoaded && s.name != null &&
+                    s.name.IndexOf("Environment", System.StringComparison.OrdinalIgnoreCase) >= 0 &&
+                    s.name.IndexOf("Menu", System.StringComparison.OrdinalIgnoreCase) < 0)
+                    return s.name;
+            }
+            return UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+        }
+
+        private static string[] SplitHints(string? s)
+            => (s ?? string.Empty).Split(';').Select(x => x.Trim()).Where(x => x.Length > 0).ToArray();
+
+        // TargetPainter.Matches と同じ基準（名前/パス/シェーダー名の部分一致）。一致したヒントを返す（無ければ null）。
+        private static string? FindMatch(string name, string path, string[] shaders, string[] hints)
+            => hints.FirstOrDefault(h => name.IndexOf(h, System.StringComparison.OrdinalIgnoreCase) >= 0
+                              || path.IndexOf(h, System.StringComparison.OrdinalIgnoreCase) >= 0
+                              || shaders.Any(s => s.IndexOf(h, System.StringComparison.OrdinalIgnoreCase) >= 0));
 
         // BakedBloomはBloomSkyboxQuadと同様、Rendererを無効化しても専用スクリプトが直接描画して
         // 消えないケースを疑い、GameObject本体と親についている全コンポーネント（Rendererに限らず）を洗い出す。
