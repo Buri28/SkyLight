@@ -36,7 +36,8 @@ namespace SkyLight.Controllers.Settings
         public bool RecolorBackground
         {
             get => _config.RecolorBackground;
-            set { _config.RecolorBackground = value; _config.Changed(); }
+            // 同じ値をShow/Hideまとめと[Background]の2か所に表示しているため、変更時は再通知してもう一方も同期する。
+            set { _config.RecolorBackground = value; _config.Changed(); NotifyPropertyChanged(); }
         }
 
         [UIValue("allow-bloom-with-background")]
@@ -78,7 +79,8 @@ namespace SkyLight.Controllers.Settings
         public bool ShowFloor
         {
             get => _config.ShowFloor;
-            set { _config.ShowFloor = value; _config.Changed(); }
+            // Show/Hideまとめと[Floor]の2か所表示のため再通知で同期。
+            set { _config.ShowFloor = value; _config.Changed(); NotifyPropertyChanged(); }
         }
 
         [UIValue("show-side-lanes")]
@@ -148,7 +150,8 @@ namespace SkyLight.Controllers.Settings
         public bool ShowStructures
         {
             get => _config.ShowStructures;
-            set { _config.ShowStructures = value; _config.Changed(); }
+            // Show/Hideまとめと[Structures]の2か所表示のため再通知で同期。
+            set { _config.ShowStructures = value; _config.Changed(); NotifyPropertyChanged(); }
         }
 
         [UIValue("structure-colorize")]
@@ -233,7 +236,8 @@ namespace SkyLight.Controllers.Settings
         public bool ShowRing
         {
             get => _config.ShowRing;
-            set { _config.ShowRing = value; _config.Changed(); }
+            // Show/Hideまとめと[Ring]の2か所表示のため再通知で同期。
+            set { _config.ShowRing = value; _config.Changed(); NotifyPropertyChanged(); }
         }
 
         [UIValue("ring-colorize")]
