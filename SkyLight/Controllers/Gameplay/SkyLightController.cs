@@ -25,6 +25,10 @@ namespace SkyLight.Controllers.Gameplay
         // 床：Bloom ON は FloorColor を反射ドームに塗って反射、Bloom OFF はフラット塗り。
         private readonly TargetPainter _floorFlat = new("floor", alwaysReassign: true, writeDepth: true);
         private readonly TargetPainter _sideLanes = new("side-lanes");
+        // 表示/非表示のみの対象（Side Lanes と同方式）：ライト・ロゴ・その他の構造物。
+        private readonly TargetPainter _lights = new("lights");
+        private readonly TargetPainter _logo = new("logo");
+        private readonly TargetPainter _otherStructures = new("other-struct");
         // 構造物・バー・リングは半透明で着色するペインター。
         private readonly TargetPainter _structures = new("struct", excludeFloorLike: true);
         private readonly TargetPainter _bars = new("bars");
@@ -96,13 +100,19 @@ namespace SkyLight.Controllers.Gameplay
 
             SceneManager.sceneUnloaded += OnSceneUnloaded;
 
-            // 診断ダンプは DumpScene のときだけ（毎曲のオブジェクト走査コストを避ける）。
-            if (_config.DebugLogging && _config.DumpScene)
+            // ダンプは DumpScene のときだけ（毎曲のオブジェクト走査コストを避ける）。
+            // DumpScene 単独 = Hide Objects 用の候補一覧のみ。フル診断は DebugLogging も ON のとき。
+            if (_config.DumpScene)
             {
-                try { SceneDiagnostics.Dump(); }
-                catch (Exception ex) { Plugin.Log.Warn($"[SkyLight] Scene dump failed: {ex.Message}"); }
-                try { BloomDiagnostics.DumpOnce(); }
-                catch (Exception ex) { Plugin.Log.Warn($"[SkyLight] Bloom dump failed: {ex.Message}"); }
+                try { SceneDiagnostics.DumpHideCandidates(_config); }
+                catch (Exception ex) { Plugin.Log.Warn($"[SkyLight] Hide candidates dump failed: {ex.Message}"); }
+                if (_config.DebugLogging)
+                {
+                    try { SceneDiagnostics.Dump(); }
+                    catch (Exception ex) { Plugin.Log.Warn($"[SkyLight] Scene dump failed: {ex.Message}"); }
+                    try { BloomDiagnostics.DumpOnce(); }
+                    catch (Exception ex) { Plugin.Log.Warn($"[SkyLight] Bloom dump failed: {ex.Message}"); }
+                }
             }
 
             _bloomTamer.Capture();
@@ -145,6 +155,9 @@ namespace SkyLight.Controllers.Gameplay
         private int _floorMode; // 0=Bloom ONでカメラ背景に映す / 1=Bloom OFFでフラット塗り
         private bool _floorPainted;
         private bool _sideLanesPainted;
+        private bool _lightsPainted;
+        private bool _logoPainted;
+        private bool _otherStructuresPainted;
         private bool _structPainted;
         private bool _barsPainted;
         private bool _ringPainted;
@@ -153,10 +166,15 @@ namespace SkyLight.Controllers.Gameplay
         {
             // 診断: Initialize()時点だと実環境がまだ読み込み切っていないことがあるため、
             // 本塗りと同じこのタイミング(約1秒後)でも再度ダンプする（DumpSceneのときだけ）。
-            if (_config.DebugLogging && _config.DumpScene)
+            if (_config.DumpScene)
             {
-                try { SceneDiagnostics.Dump(); }
-                catch (Exception ex) { Plugin.Log.Warn($"[SkyLight] Scene dump (ApplyMode) failed: {ex.Message}"); }
+                try { SceneDiagnostics.DumpHideCandidates(_config); }
+                catch (Exception ex) { Plugin.Log.Warn($"[SkyLight] Hide candidates dump (ApplyMode) failed: {ex.Message}"); }
+                if (_config.DebugLogging)
+                {
+                    try { SceneDiagnostics.Dump(); }
+                    catch (Exception ex) { Plugin.Log.Warn($"[SkyLight] Scene dump (ApplyMode) failed: {ex.Message}"); }
+                }
             }
 
             // Bloom の強制OFFは LateTick が毎フレーム行うのでここでは触らない。
@@ -195,11 +213,17 @@ namespace SkyLight.Controllers.Gameplay
             UpdateFloorVisibility();
             UpdateSideLaneVisibility();
 
+            // 表示/非表示のみの対象（Side Lanes と同方式）。
+            UpdateVisibilityOnly(_lights, ref _lightsPainted, _config.LightHints, _config.ShowLights);
+            UpdateVisibilityOnly(_logo, ref _logoPainted, _config.LogoHints, _config.ShowLogo);
+            UpdateVisibilityOnly(_otherStructures, ref _otherStructuresPainted, _config.OtherStructureHints, _config.ShowOtherStructures);
+
             // 構造物（名前/シェーダーヒントで対象、除外あり）。Colorize=false なら元の色のまま透明度だけ。
             UpdateTarget(_structures, _config.PaintStructures || !_config.ShowStructures, ref _structPainted,
                 _config.StructureShaderHints, GetEffectiveStructureExcludes(), disableMirror: false,
                 _config.StructureColorize,
-                MakeColor(_config.StructureColor, _config.StructureBrightness, _config.StructureAlpha, new Color(0.25f, 0.38f, 0.63f)));
+                MakeColor(_config.StructureColor, _config.StructureBrightness, _config.StructureAlpha, new Color(0.25f, 0.38f, 0.63f)),
+                _config.StructureExcludeOverrideHints);
             if (_structPainted)
                 _structures.SetVisible(_config.ShowStructures);
 
@@ -282,11 +306,11 @@ namespace SkyLight.Controllers.Gameplay
             _neonRenderers.SetVisible(!_config.HideNeon);
         }
 
-        private void UpdateTarget(TargetPainter p, bool want, ref bool painted, string hints, string exclude, bool disableMirror, bool colorize, Color rgba)
+        private void UpdateTarget(TargetPainter p, bool want, ref bool painted, string hints, string exclude, bool disableMirror, bool colorize, Color rgba, string excludeOverride = "")
         {
             if (want && !painted)
             {
-                p.Collect(hints, exclude, disableMirror, colorize);
+                p.Collect(hints, exclude, disableMirror, colorize, excludeOverride);
                 painted = true;
             }
             else if (!want && painted)
@@ -298,7 +322,7 @@ namespace SkyLight.Controllers.Gameplay
             {
                 // リング等は再生開始から少し遅れて現れるため、開始約1秒後に一度だけ増分収集する（以降 Refresh は何もしない）。
                 if (_frame % TargetRefreshInterval == 0)
-                    p.Refresh(hints, exclude, disableMirror);
+                    p.Refresh(hints, exclude, disableMirror, excludeOverride);
                 p.Apply(rgba);
             }
         }
@@ -358,6 +382,32 @@ namespace SkyLight.Controllers.Gameplay
 
             _bars.SetVisible(_config.ShowBars);
         }
+
+        // 表示/非表示のみの対象（ライト・ロゴ・その他の構造物）。Side Lanes と同じく
+        // 初回に収集し、約1秒後に一度だけ増分収集して、表示状態を設定に合わせる。
+        // ノーツ/セイバー等を巻き込まないよう共通の除外を常に適用する。
+        private void UpdateVisibilityOnly(TargetPainter p, ref bool collected, string hints, bool show)
+        {
+            var effective = (hints ?? string.Empty).Trim();
+            if (effective.Length == 0) return;
+            var excludes = GetCommonVisibilityExcludes();
+
+            if (!collected)
+            {
+                p.Collect(effective, excludes, disableMirror: false, colorize: false);
+                collected = true;
+            }
+            else if (_frame % TargetRefreshInterval == 0)
+            {
+                p.Refresh(effective, excludes, disableMirror: false);
+            }
+
+            p.SetVisible(show);
+        }
+
+        // 表示/非表示のみ対象の共通除外（ノーツ・セイバー・床・空などの巻き添え防止）。
+        private static string GetCommonVisibilityExcludes()
+            => "Mirror;Note;Saber;Arrow;Bomb;Skybox;BloomSkyboxQuad;Debris;Obstacle;PreviewQuad;Feet";
 
         private void UpdateSideLaneVisibility()
         {
@@ -459,6 +509,9 @@ namespace SkyLight.Controllers.Gameplay
             _bloomTamer.Restore();
             _floorFlat.Restore();
             _sideLanes.Restore();
+            _lights.Restore();
+            _logo.Restore();
+            _otherStructures.Restore();
             _structures.Restore();
             _bars.Restore();
             _ring.Restore();
@@ -470,6 +523,9 @@ namespace SkyLight.Controllers.Gameplay
             _floorMode = 0;
             _floorPainted = false;
             _sideLanesPainted = false;
+            _lightsPainted = false;
+            _logoPainted = false;
+            _otherStructuresPainted = false;
             _structPainted = false;
             _barsPainted = false;
             _ringPainted = false;

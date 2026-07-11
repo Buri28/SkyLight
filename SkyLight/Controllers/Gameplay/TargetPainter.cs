@@ -40,8 +40,9 @@ namespace SkyLight.Controllers.Gameplay
         }
 
         // hints / excludeHints: ';' 区切り。名前 または シェーダー名に部分一致で対象/除外。
+        // excludeOverrideHints: 除外の例外。除外に一致しても、こちらに一致すれば対象に戻す。
         // colorize=true: 単色（rgba）で塗る。false: 元の色を残し透明度(rgba.a)だけ下げる。
-        public void Collect(string hints, string excludeHints, bool disableMirror, bool colorize = true)
+        public void Collect(string hints, string excludeHints, bool disableMirror, bool colorize = true, string excludeOverrideHints = "")
         {
             _colorize = colorize;
             _painted.Clear();
@@ -53,11 +54,12 @@ namespace SkyLight.Controllers.Gameplay
 
             var hintArr = Split(hints);
             var exArr = Split(excludeHints);
+            var exOverrideArr = Split(excludeOverrideHints);
             if (hintArr.Length == 0) { LogOnce(); return; }
 
             foreach (var r in UnityEngine.Object.FindObjectsOfType<Renderer>())
             {
-                if (r == null || !Matches(r, hintArr, exArr)) continue;
+                if (r == null || !Matches(r, hintArr, exArr, exOverrideArr)) continue;
                 _ids.Add(r.GetInstanceID());
                 _painted.Add((r, r.sharedMaterials));
                 DisableMirrorsOn(r, disableMirror);
@@ -115,8 +117,10 @@ namespace SkyLight.Controllers.Gameplay
         // Destroy は同じGameObject上の別スクリプトが破棄後の参照で毎フレーム例外を吐いた前例があるため使わない。
         private void DisableBloomPrePassOn(Renderer r)
         {
-            DisableBloomPrePassIn(r.GetComponentsInParent<Behaviour>(true));   // 自分自身＋全祖先
-            DisableBloomPrePassIn(r.GetComponentsInChildren<Behaviour>(true)); // 自分自身＋子孫
+            DisableBloomPrePassIn(r.GetComponentsInParent<Behaviour>(true)); // 自分自身＋全祖先
+            // 親配下ごと探す（自分自身＋子孫に加え、兄弟とその子孫に付くライトも拾う）。
+            var subtree = r.transform.parent != null ? r.transform.parent : r.transform;
+            DisableBloomPrePassIn(subtree.GetComponentsInChildren<Behaviour>(true));
         }
 
         private void DisableBloomPrePassIn(Behaviour[] comps)
@@ -133,17 +137,18 @@ namespace SkyLight.Controllers.Gameplay
 
         // 後から出現した対象を増分で追加する（リング等は再生開始から少し遅れて現れるため）。
         // 実行は Collect 後の1回だけ。以降は完全に何もしない。
-        public void Refresh(string hints, string excludeHints, bool disableMirror)
+        public void Refresh(string hints, string excludeHints, bool disableMirror, string excludeOverrideHints = "")
         {
             if (_refreshSettled) return; // 2回目以降は探索しない（FindObjectsOfType を回さない）
             var hintArr = Split(hints);
             if (hintArr.Length == 0) return;
             var exArr = Split(excludeHints);
+            var exOverrideArr = Split(excludeOverrideHints);
 
             int before = _painted.Count;
             foreach (var r in UnityEngine.Object.FindObjectsOfType<Renderer>())
             {
-                if (r == null || !Matches(r, hintArr, exArr)) continue;
+                if (r == null || !Matches(r, hintArr, exArr, exOverrideArr)) continue;
                 if (!_ids.Add(r.GetInstanceID())) continue; // 既知はスキップ
                 _painted.Add((r, r.sharedMaterials));
                 DisableMirrorsOn(r, disableMirror);
@@ -181,7 +186,7 @@ namespace SkyLight.Controllers.Gameplay
             return sceneName != null && sceneName.IndexOf("Menu", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
-        private bool Matches(Renderer r, string[] hintArr, string[] exArr)
+        private bool Matches(Renderer r, string[] hintArr, string[] exArr, string[] exOverrideArr)
         {
             if (IsMenuObject(r)) return false;
             string name = r.gameObject.name;
@@ -195,6 +200,11 @@ namespace SkyLight.Controllers.Gameplay
             bool excluded = exArr.Any(h => name.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0
                                            || path.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0
                                            || shaders.Any(s => s.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0));
+            // 除外の例外：除外に一致しても、override に一致すれば対象へ戻す（例: Mirror除外中の DiamondMirror）。
+            if (excluded && exOverrideArr.Length > 0)
+                excluded = !exOverrideArr.Any(h => name.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0
+                                                   || path.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0
+                                                   || shaders.Any(s => s.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0));
             if (excluded) return false;
             if (_excludeFloorLike && IsFloorLike(r)) return false;
             return true;

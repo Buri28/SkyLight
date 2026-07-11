@@ -63,6 +63,17 @@ namespace SkyLight.Configuration
         public virtual bool FloorDirectPaint { get; set; } = false;
         public virtual string SideLaneHints { get; set; } = "TrackConstruction;FloorConstruction;TrackLane;Lane;Road";
 
+        // ─── 表示/非表示のみの対象（Side Lanes と同方式） ───────────────────
+        // ライト（名前に Light を含むオブジェクト）。
+        public virtual bool ShowLights { get; set; } = true;
+        public virtual string LightHints { get; set; } = "Light";
+        // ロゴ（環境名ロゴ等）。
+        public virtual bool ShowLogo { get; set; } = true;
+        public virtual string LogoHints { get; set; } = "Logo";
+        // その他の構造物（環境固有の演出オブジェクト群）。
+        public virtual bool ShowOtherStructures { get; set; } = true;
+        public virtual string OtherStructureHints { get; set; } = "Window;Tunnel;MagicDoor;Waterfall;Sun;Rain;Clouds;Aurora;Smoke;Flipbook;Video;Building;Mountain;Orbit;Star;Graffiti;HitQuad;Mesh;Dust;DiamondMirror";
+
         // ─── 構造物（黒いシルエットの構造物。名前/シェーダーで対象指定） ───────────────────
         public virtual bool ShowStructures { get; set; } = true;
         public virtual bool PaintStructures { get; set; } = true;
@@ -73,8 +84,11 @@ namespace SkyLight.Configuration
         public virtual float StructureAlpha { get; set; } = 0.6999999f;
         // 対象ヒント（名前/シェーダー名に部分一致、; 区切り）。
         public virtual string StructureShaderHints { get; set; } = "SimpleLit";
-        // 除外ヒント（床・ノーツ・空などを巻き込まないため）。
-        public virtual string StructureExcludeHints { get; set; } = "Mirror;Note;Saber;Arrow;Bomb;Skybox;BloomSkyboxQuad;Ring;TrackConstruction;Spectrogram";
+        // 除外ヒント（床・ノーツ・空などを巻き込まないため）。後から追加Obstacle;BurnPS;DepthWrite;Feet;PreviewQuad
+        public virtual string StructureExcludeHints { get; set; } = "Mirror;Note;Saber;Arrow;Bomb;Skybox;BloomSkyboxQuad;Ring;TrackConstruction;Spectrogram;";
+        // 除外の例外（除外ヒントに一致しても、こちらに一致すれば構造物の対象に戻す）。
+        // 例: 除外の "Mirror" に巻き込まれる "DiamondMirror" を対象に戻したい場合に "DiamondMirror" を指定。
+        public virtual string StructureExcludeOverrideHints { get; set; } = "MirrorMesh;TrackMirror;";
 
         // ─── バー（Spectrogram の黒バー） ───────────────────
         public virtual bool ShowBars { get; set; } = true;

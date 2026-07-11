@@ -155,6 +155,29 @@
                       bind-value='true'
                       hover-hint='Show or hide the side lanes and track-side black strips beside the floor.' />
 
+    <!-- ───────── Lights / Logo / Other Structures (show/hide only) ───────── -->
+    <horizontal spacing='1' pad='0' pad-top='1'>
+      <text text='[Lights / Logo / Others]' color='#FFB6C1' />
+    </horizontal>
+
+    <toggle-setting text='Show Lights'
+                    value='show-lights'
+                    apply-on-change='true'
+                    bind-value='true'
+                    hover-hint='Show or hide light objects (name contains "Light"). Takes effect from the next song.' />
+
+    <toggle-setting text='Show Logo'
+                    value='show-logo'
+                    apply-on-change='true'
+                    bind-value='true'
+                    hover-hint='Show or hide environment logo objects (name contains "Logo"). Takes effect from the next song.' />
+
+    <toggle-setting text='Show Other Structures'
+                    value='show-other-structures'
+                    apply-on-change='true'
+                    bind-value='true'
+                    hover-hint='Show or hide misc environment objects (Window/Tunnel/Waterfall/Sun/Rain/Clouds/Smoke/Building/Mountain/Star etc.). Takes effect from the next song.' />
+
     <!-- ───────── Structures ───────── -->
     <horizontal spacing='1' pad='0' pad-top='1'>
       <text text='[Structures]' color='#DDA0DD' />
