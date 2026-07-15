@@ -15,7 +15,10 @@ namespace SkyLight.Controllers.Gameplay
         private readonly List<(Renderer renderer, Material[] original)> _painted = new();
         // 反射床(Mirror)は描画直前に自前マテリアルへ戻すので、対象なら Mirror 系コンポーネントを無効化する。
         private readonly List<(Behaviour b, bool origEnabled)> _disabledMirrors = new();
+        private readonly HashSet<int> _disabledMirrorIds = new(); // _disabledMirrors の重複防止（線形検索の回避）
         private readonly List<(Renderer renderer, bool origEnabled)> _hiddenRenderers = new();
+        private readonly HashSet<int> _hiddenIds = new(); // _hiddenRenderers の重複防止（線形検索の回避）
+        private readonly HashSet<Transform> _bloomScannedRoots = new(); // BloomPrePass探索済みのサブツリー根（重複走査防止）
         // 透明度だけモード（colorize=false）：元マテリアルを複製し、半透明化して色は元のまま残す。
         private readonly List<(Renderer renderer, Material[] clones)> _cloned = new();
         private Material? _mat;
@@ -42,7 +45,8 @@ namespace SkyLight.Controllers.Gameplay
         // hints / excludeHints: ';' 区切り。名前 または シェーダー名に部分一致で対象/除外。
         // excludeOverrideHints: 除外の例外。除外に一致しても、こちらに一致すれば対象に戻す。
         // colorize=true: 単色（rgba）で塗る。false: 元の色を残し透明度(rgba.a)だけ下げる。
-        public void Collect(string hints, string excludeHints, bool disableMirror, bool colorize = true, string excludeOverrideHints = "")
+        // scan: ApplyMode 側で1回だけ取得した共有スキャン（各ペインターが個別に全走査しないため）。
+        public void Collect(RendererScan scan, string hints, string excludeHints, bool disableMirror, bool colorize = true, string excludeOverrideHints = "")
         {
             _colorize = colorize;
             _painted.Clear();
@@ -57,13 +61,13 @@ namespace SkyLight.Controllers.Gameplay
             var exOverrideArr = Split(excludeOverrideHints);
             if (hintArr.Length == 0) { LogOnce(); return; }
 
-            foreach (var r in UnityEngine.Object.FindObjectsOfType<Renderer>())
+            foreach (var e in scan.Entries)
             {
-                if (r == null || !Matches(r, hintArr, exArr, exOverrideArr)) continue;
-                _ids.Add(r.GetInstanceID());
-                _painted.Add((r, r.sharedMaterials));
-                DisableMirrorsOn(r, disableMirror);
-                DisableBloomPrePassOn(r);
+                if (e.Renderer == null || !Matches(e, hintArr, exArr, exOverrideArr)) continue;
+                _ids.Add(e.Renderer.GetInstanceID());
+                _painted.Add((e.Renderer, e.SharedMaterials));
+                DisableMirrorsOn(e.Renderer, disableMirror);
+                DisableBloomPrePassOn(e.Renderer);
             }
 
             LogOnce();
@@ -72,17 +76,17 @@ namespace SkyLight.Controllers.Gameplay
         // 指定レイヤーのレンダラーを丸ごと収集する（色は塗らず、表示/非表示の切り替え専用）。
         // cullingMaskによるレイヤー除外がBloom等の専用パスに効かない場合の保険として、
         // Rendererコンポーネント自体を直接無効化するために使う。
-        public void CollectByLayer(int layer)
+        public void CollectByLayer(RendererScan scan, int layer)
         {
             _painted.Clear();
             _ids.Clear();
 
-            foreach (var r in UnityEngine.Object.FindObjectsOfType<Renderer>())
+            foreach (var e in scan.Entries)
             {
-                if (r == null || r.gameObject.layer != layer || IsMenuObject(r)) continue;
-                _ids.Add(r.GetInstanceID());
-                _painted.Add((r, r.sharedMaterials));
-                DisableBloomPrePassOn(r);
+                if (e.Renderer == null || e.Renderer.gameObject.layer != layer) continue;
+                _ids.Add(e.Renderer.GetInstanceID());
+                _painted.Add((e.Renderer, e.SharedMaterials));
+                DisableBloomPrePassOn(e.Renderer);
             }
 
             LogOnce();
@@ -90,18 +94,20 @@ namespace SkyLight.Controllers.Gameplay
 
         // ライトショー演出等で後から対象レイヤーへ切り替わるレンダラーを増分で拾う。
         // 既に非表示中(SetVisible(false)済み)なら、新規追加分もその場で即座に非表示化する。
-        public void RefreshByLayer(int layer)
+        public void RefreshByLayer(RendererScan scan, int layer)
         {
             if (_refreshSettled) return;
-            foreach (var r in UnityEngine.Object.FindObjectsOfType<Renderer>())
+            foreach (var e in scan.Entries)
             {
-                if (r == null || r.gameObject.layer != layer || IsMenuObject(r)) continue;
+                var r = e.Renderer;
+                if (r == null || r.gameObject.layer != layer) continue;
                 if (!_ids.Add(r.GetInstanceID())) continue;
-                _painted.Add((r, r.sharedMaterials));
+                _painted.Add((r, e.SharedMaterials));
                 DisableBloomPrePassOn(r);
                 if (_hiding && r.enabled)
                 {
-                    _hiddenRenderers.Add((r, true));
+                    if (_hiddenIds.Add(r.GetInstanceID()))
+                        _hiddenRenderers.Add((r, true));
                     r.enabled = false;
                 }
             }
@@ -117,9 +123,13 @@ namespace SkyLight.Controllers.Gameplay
         // Destroy は同じGameObject上の別スクリプトが破棄後の参照で毎フレーム例外を吐いた前例があるため使わない。
         private void DisableBloomPrePassOn(Renderer r)
         {
+            // 同じ親を持つレンダラーが多数マッチする環境（ネオン管群など）では全く同じ範囲を
+            // 何度も走査することになるため、走査済みのサブツリー根を覚えてスキップする。
+            var subtree = r.transform.parent != null ? r.transform.parent : r.transform;
+            if (!_bloomScannedRoots.Add(subtree)) return;
+
             DisableBloomPrePassIn(r.GetComponentsInParent<Behaviour>(true)); // 自分自身＋全祖先
             // 親配下ごと探す（自分自身＋子孫に加え、兄弟とその子孫に付くライトも拾う）。
-            var subtree = r.transform.parent != null ? r.transform.parent : r.transform;
             DisableBloomPrePassIn(subtree.GetComponentsInChildren<Behaviour>(true));
         }
 
@@ -129,7 +139,7 @@ namespace SkyLight.Controllers.Gameplay
             {
                 if (comp == null) continue;
                 if (comp.GetType().Name.IndexOf("BloomPrePassLight", StringComparison.OrdinalIgnoreCase) < 0) continue;
-                if (_disabledMirrors.Any(d => d.b == comp)) continue;
+                if (!_disabledMirrorIds.Add(comp.GetInstanceID())) continue;
                 _disabledMirrors.Add((comp, comp.enabled));
                 comp.enabled = false;
             }
@@ -137,26 +147,28 @@ namespace SkyLight.Controllers.Gameplay
 
         // 後から出現した対象を増分で追加する（リング等は再生開始から少し遅れて現れるため）。
         // 実行は Collect 後の1回だけ。以降は完全に何もしない。
-        public void Refresh(string hints, string excludeHints, bool disableMirror, string excludeOverrideHints = "")
+        public void Refresh(RendererScan scan, string hints, string excludeHints, bool disableMirror, string excludeOverrideHints = "")
         {
-            if (_refreshSettled) return; // 2回目以降は探索しない（FindObjectsOfType を回さない）
+            if (_refreshSettled) return; // 2回目以降は探索しない
             var hintArr = Split(hints);
             if (hintArr.Length == 0) return;
             var exArr = Split(excludeHints);
             var exOverrideArr = Split(excludeOverrideHints);
 
             int before = _painted.Count;
-            foreach (var r in UnityEngine.Object.FindObjectsOfType<Renderer>())
+            foreach (var e in scan.Entries)
             {
-                if (r == null || !Matches(r, hintArr, exArr, exOverrideArr)) continue;
+                var r = e.Renderer;
+                if (r == null || !Matches(e, hintArr, exArr, exOverrideArr)) continue;
                 if (!_ids.Add(r.GetInstanceID())) continue; // 既知はスキップ
-                _painted.Add((r, r.sharedMaterials));
+                _painted.Add((r, e.SharedMaterials));
                 DisableMirrorsOn(r, disableMirror);
                 DisableBloomPrePassOn(r);
                 // 非表示中(SetVisible(false)済み)なら、新規に見つかった分もその場で即座に非表示化する。
                 if (_hiding && r.enabled)
                 {
-                    _hiddenRenderers.Add((r, true));
+                    if (_hiddenIds.Add(r.GetInstanceID()))
+                        _hiddenRenderers.Add((r, true));
                     r.enabled = false;
                 }
             }
@@ -177,37 +189,30 @@ namespace SkyLight.Controllers.Gameplay
             _refreshSettled = true;
         }
 
-        // メニュー系シーン（MenuCore / MenuEnvironment / MenuViewControllers / MainMenu 等）に属する
-        // オブジェクトは触らない。プレイ中もこれらのシーンはロードされたまま残っており、
-        // 巻き添えで非表示・材質差し替えするとメニューへ戻った際の表示（スコアボードの文字等）が壊れる。
-        private static bool IsMenuObject(Renderer r)
+        // メニュー系オブジェクトの除外は RendererScan.Capture が収集時点で済ませている。
+        // 名前/パス/シェーダー名はスキャン時にキャッシュ済みのものを使い、ここでは一切アロケーションしない。
+        private bool Matches(in RendererScan.Entry e, string[] hintArr, string[] exArr, string[] exOverrideArr)
         {
-            var sceneName = r.gameObject.scene.name;
-            return sceneName != null && sceneName.IndexOf("Menu", StringComparison.OrdinalIgnoreCase) >= 0;
-        }
-
-        private bool Matches(Renderer r, string[] hintArr, string[] exArr, string[] exOverrideArr)
-        {
-            if (IsMenuObject(r)) return false;
-            string name = r.gameObject.name;
-            string path = GetPath(r.transform);
-            var shaders = r.sharedMaterials.Where(m => m != null && m.shader != null).Select(m => m.shader.name).ToArray();
-
-            bool match = hintArr.Any(h => name.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0
-                                          || path.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0
-                                          || shaders.Any(s => s.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0));
-            if (!match) return false;
-            bool excluded = exArr.Any(h => name.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0
-                                           || path.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0
-                                           || shaders.Any(s => s.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0));
+            if (!AnyHit(e, hintArr)) return false;
+            bool excluded = AnyHit(e, exArr);
             // 除外の例外：除外に一致しても、override に一致すれば対象へ戻す（例: Mirror除外中の DiamondMirror）。
             if (excluded && exOverrideArr.Length > 0)
-                excluded = !exOverrideArr.Any(h => name.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0
-                                                   || path.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0
-                                                   || shaders.Any(s => s.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0));
+                excluded = !AnyHit(e, exOverrideArr);
             if (excluded) return false;
-            if (_excludeFloorLike && IsFloorLike(r)) return false;
+            if (_excludeFloorLike && IsFloorLike(e.Renderer)) return false;
             return true;
+        }
+
+        private static bool AnyHit(in RendererScan.Entry e, string[] hints)
+        {
+            foreach (var h in hints)
+            {
+                if (e.Name.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0) return true;
+                if (e.Path.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0) return true;
+                foreach (var s in e.ShaderNames)
+                    if (s.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            }
+            return false;
         }
 
         private void DisableMirrorsOn(Renderer r, bool disableMirror)
@@ -217,7 +222,7 @@ namespace SkyLight.Controllers.Gameplay
             {
                 if (comp == null) continue;
                 if (comp.GetType().Name.IndexOf("Mirror", StringComparison.OrdinalIgnoreCase) < 0) continue;
-                if (_disabledMirrors.Any(d => d.b == comp)) continue;
+                if (!_disabledMirrorIds.Add(comp.GetInstanceID())) continue;
                 _disabledMirrors.Add((comp, comp.enabled));
                 comp.enabled = false;
             }
@@ -281,13 +286,14 @@ namespace SkyLight.Controllers.Gameplay
                 foreach (var (renderer, origEnabled) in _hiddenRenderers)
                     if (renderer != null) renderer.enabled = origEnabled;
                 _hiddenRenderers.Clear();
+                _hiddenIds.Clear();
                 return;
             }
 
             foreach (var (renderer, _) in _painted)
             {
                 if (renderer == null) continue;
-                if (_hiddenRenderers.Any(h => h.renderer == renderer)) continue;
+                if (!_hiddenIds.Add(renderer.GetInstanceID())) continue;
                 _hiddenRenderers.Add((renderer, renderer.enabled));
                 renderer.enabled = false;
             }
@@ -360,6 +366,7 @@ namespace SkyLight.Controllers.Gameplay
             foreach (var (renderer, origEnabled) in _hiddenRenderers)
                 if (renderer != null) renderer.enabled = origEnabled;
             _hiddenRenderers.Clear();
+            _hiddenIds.Clear();
 
             foreach (var (renderer, clones) in _cloned)
                 foreach (var c in clones)
@@ -369,6 +376,8 @@ namespace SkyLight.Controllers.Gameplay
             foreach (var (b, origEnabled) in _disabledMirrors)
                 if (b != null) b.enabled = origEnabled;
             _disabledMirrors.Clear();
+            _disabledMirrorIds.Clear();
+            _bloomScannedRoots.Clear();
 
             if (_mat != null) { UnityEngine.Object.Destroy(_mat); _mat = null; }
             _ids.Clear();

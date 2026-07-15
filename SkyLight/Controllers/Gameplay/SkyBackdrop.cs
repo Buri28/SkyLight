@@ -26,7 +26,8 @@ namespace SkyLight.Controllers.Gameplay
         private bool _logged;
         private bool _transparentMode; // alpha<1 のとき true。元背景を隠さず半透明ブレンドする。
 
-        public void Build(string hideHints, Color color, float scale)
+        // scan: ApplyMode 側で1回だけ取得した共有スキャン（背景クワッド探索用）。
+        public void Build(RendererScan scan, string hideHints, Color color, float scale)
         {
             // 実描画している MainCamera を探してドームの親にする
             var cam = Camera.allCameras.FirstOrDefault(c =>
@@ -35,19 +36,17 @@ namespace SkyLight.Controllers.Gameplay
 
             _transparentMode = color.a < 0.999f;
 
-            var all = Object.FindObjectsOfType<Renderer>();
-
             // 不透明モードのみ: 元の背景クワッドを収集（毎フレーム非表示にする）。ドームが背景を置き換える。
             // 透過モードでは元の背景を残し、その上に半透明の色を重ねるので隠さない。
             _hidden.Clear();
             if (!_transparentMode)
             {
                 var hints = hideHints.Split(';').Select(h => h.Trim()).Where(h => h.Length > 0).ToArray();
-                foreach (var r in all)
+                foreach (var e in scan.Entries)
                 {
-                    if (r.sharedMaterials.Any(m => m != null && m.shader != null &&
-                            hints.Any(h => m.shader.name.IndexOf(h, System.StringComparison.OrdinalIgnoreCase) >= 0)))
-                        _hidden.Add(r);
+                    if (e.Renderer != null &&
+                        e.ShaderNames.Any(s => hints.Any(h => s.IndexOf(h, System.StringComparison.OrdinalIgnoreCase) >= 0)))
+                        _hidden.Add(e.Renderer);
                 }
             }
 
