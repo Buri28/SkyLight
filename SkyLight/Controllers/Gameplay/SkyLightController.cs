@@ -181,10 +181,14 @@ namespace SkyLight.Controllers.Gameplay
             bool bloomOn = IsBloomOn();
             bool useBackdrop = _config.RecolorBackground;
 
+            // シーン走査は1回だけ行い、全ペインターで共有する（以前は各 Collect/Refresh が
+            // それぞれ FindObjectsOfType で全走査しており、同一フレームに10回以上走っていた）。
+            var scan = RendererScan.Capture();
+
             // 背景ドーム。Sky Background ON 時に元背景を置き換える。
             if (useBackdrop && !_domeBuilt)
             {
-                _backdrop.Build(_config.BackgroundShaderHints, GetDomeColor(), DomeScale);
+                _backdrop.Build(scan, _config.BackgroundShaderHints, GetDomeColor(), DomeScale);
                 _domeBuilt = true;
             }
             else if (!useBackdrop && _domeBuilt)
@@ -210,16 +214,16 @@ namespace SkyLight.Controllers.Gameplay
                 _floorPainted = false;
                 _floorMode = wantFloorMode;
             }
-            UpdateFloorVisibility();
-            UpdateSideLaneVisibility();
+            UpdateFloorVisibility(scan);
+            UpdateSideLaneVisibility(scan);
 
             // 表示/非表示のみの対象（Side Lanes と同方式）。
-            UpdateVisibilityOnly(_lights, ref _lightsPainted, _config.LightHints, _config.ShowLights);
-            UpdateVisibilityOnly(_logo, ref _logoPainted, _config.LogoHints, _config.ShowLogo);
-            UpdateVisibilityOnly(_otherStructures, ref _otherStructuresPainted, _config.OtherStructureHints, _config.ShowOtherStructures);
+            UpdateVisibilityOnly(scan, _lights, ref _lightsPainted, _config.LightHints, _config.ShowLights);
+            UpdateVisibilityOnly(scan, _logo, ref _logoPainted, _config.LogoHints, _config.ShowLogo);
+            UpdateVisibilityOnly(scan, _otherStructures, ref _otherStructuresPainted, _config.OtherStructureHints, _config.ShowOtherStructures);
 
             // 構造物（名前/シェーダーヒントで対象、除外あり）。Colorize=false なら元の色のまま透明度だけ。
-            UpdateTarget(_structures, _config.PaintStructures || !_config.ShowStructures, ref _structPainted,
+            UpdateTarget(scan, _structures, _config.PaintStructures || !_config.ShowStructures, ref _structPainted,
                 _config.StructureShaderHints, GetEffectiveStructureExcludes(), disableMirror: false,
                 _config.StructureColorize,
                 MakeColor(_config.StructureColor, _config.StructureBrightness, _config.StructureAlpha, new Color(0.25f, 0.38f, 0.63f)),
@@ -228,25 +232,25 @@ namespace SkyLight.Controllers.Gameplay
                 _structures.SetVisible(_config.ShowStructures);
 
             // バー（Spectrogram）は表示/非表示だけを管理する。
-            UpdateBarVisibility();
+            UpdateBarVisibility(scan);
 
             // リング。対象は RingShaderHints で指定（環境により "Ring" 名が無いため）。
-            UpdateTarget(_ring, _config.PaintRing || !_config.ShowRing, ref _ringPainted,
+            UpdateTarget(scan, _ring, _config.PaintRing || !_config.ShowRing, ref _ringPainted,
                 GetEffectiveRingHints(), _config.RingExcludeHints, disableMirror: false, _config.RingColorize,
                 MakeColor(_config.RingColor, _config.RingBrightness, _config.RingAlpha, new Color(0.227f, 0.627f, 1f)));
             if (_ringPainted)
                 _ring.SetVisible(_config.ShowRing);
 
             // ネオン/レーザー(NeonLightレイヤー)の表示/非表示。横の動くネオンバー・水色ビームを消す。
-            ApplyNeonVisibility();
+            ApplyNeonVisibility(scan);
 
             // ユーザー指定オブジェクトの非表示（Hide Objects）。
-            ApplyHideObjects();
+            ApplyHideObjects(scan);
         }
 
         // HideObjectHints（; 区切りの部分一致）に一致するレンダラーを非表示にする。
         // 収集はこの ApplyMode のタイミング（曲開始＋約1秒後）だけで、毎フレーム処理はしない。
-        private void ApplyHideObjects()
+        private void ApplyHideObjects(RendererScan scan)
         {
             var hints = (_config.HideObjectHints ?? string.Empty).Trim();
             if (hints != _hiderHints)
@@ -255,7 +259,7 @@ namespace SkyLight.Controllers.Gameplay
                 _hider.Restore();
                 _hiderHints = hints;
                 if (hints.Length > 0)
-                    _hider.Collect(hints, _config.HideObjectExcludeHints, disableMirror: false, colorize: false);
+                    _hider.Collect(scan, hints, _config.HideObjectExcludeHints, disableMirror: false, colorize: false);
             }
             if (hints.Length > 0)
                 _hider.SetVisible(false);
@@ -263,7 +267,7 @@ namespace SkyLight.Controllers.Gameplay
 
         // NeonLight レイヤー(13)を全カメラの cullingMask から外す/戻す。BloomPrePass のネオンは色塗り不可なので、
         // 描画対象から外して隠す。元のマスクは保存して Dispose で復元。
-        private void ApplyNeonVisibility()
+        private void ApplyNeonVisibility(RendererScan scan)
         {
             if (_neonLayer < 0)
                 _neonLayer = LayerMask.NameToLayer("NeonLight");
@@ -291,7 +295,7 @@ namespace SkyLight.Controllers.Gameplay
             // 名前一致で個別に収集して表示/非表示を切り替える。
             if (!_glowLinesCollected)
             {
-                _glowLines.Collect("GlowLine", "", disableMirror: false, colorize: false);
+                _glowLines.Collect(scan, "GlowLine", "", disableMirror: false, colorize: false);
                 _glowLinesCollected = true;
             }
             _glowLines.SetVisible(!_config.HideNeon);
@@ -300,17 +304,17 @@ namespace SkyLight.Controllers.Gameplay
             // Renderer自体も直接無効化する（GlowLine同様、こちらは色を塗らず表示/非表示のみ）。
             if (!_neonRenderersCollected)
             {
-                _neonRenderers.CollectByLayer(_neonLayer);
+                _neonRenderers.CollectByLayer(scan, _neonLayer);
                 _neonRenderersCollected = true;
             }
             _neonRenderers.SetVisible(!_config.HideNeon);
         }
 
-        private void UpdateTarget(TargetPainter p, bool want, ref bool painted, string hints, string exclude, bool disableMirror, bool colorize, Color rgba, string excludeOverride = "")
+        private void UpdateTarget(RendererScan scan, TargetPainter p, bool want, ref bool painted, string hints, string exclude, bool disableMirror, bool colorize, Color rgba, string excludeOverride = "")
         {
             if (want && !painted)
             {
-                p.Collect(hints, exclude, disableMirror, colorize, excludeOverride);
+                p.Collect(scan, hints, exclude, disableMirror, colorize, excludeOverride);
                 painted = true;
             }
             else if (!want && painted)
@@ -322,7 +326,7 @@ namespace SkyLight.Controllers.Gameplay
             {
                 // リング等は再生開始から少し遅れて現れるため、開始約1秒後に一度だけ増分収集する（以降 Refresh は何もしない）。
                 if (_frame % TargetRefreshInterval == 0)
-                    p.Refresh(hints, exclude, disableMirror, excludeOverride);
+                    p.Refresh(scan, hints, exclude, disableMirror, excludeOverride);
                 p.Apply(rgba);
             }
         }
@@ -368,16 +372,16 @@ namespace SkyLight.Controllers.Gameplay
             return hints.Length == 0 ? "Spectrogram" : hints;
         }
 
-        private void UpdateBarVisibility()
+        private void UpdateBarVisibility(RendererScan scan)
         {
             if (!_barsPainted)
             {
-                _bars.Collect(GetEffectiveBarHints(), _config.BarExcludeHints, disableMirror: false, colorize: true);
+                _bars.Collect(scan, GetEffectiveBarHints(), _config.BarExcludeHints, disableMirror: false, colorize: true);
                 _barsPainted = true;
             }
             else if (_frame % TargetRefreshInterval == 0)
             {
-                _bars.Refresh(GetEffectiveBarHints(), _config.BarExcludeHints, disableMirror: false);
+                _bars.Refresh(scan, GetEffectiveBarHints(), _config.BarExcludeHints, disableMirror: false);
             }
 
             _bars.SetVisible(_config.ShowBars);
@@ -386,7 +390,7 @@ namespace SkyLight.Controllers.Gameplay
         // 表示/非表示のみの対象（ライト・ロゴ・その他の構造物）。Side Lanes と同じく
         // 初回に収集し、約1秒後に一度だけ増分収集して、表示状態を設定に合わせる。
         // ノーツ/セイバー等を巻き込まないよう共通の除外を常に適用する。
-        private void UpdateVisibilityOnly(TargetPainter p, ref bool collected, string hints, bool show)
+        private void UpdateVisibilityOnly(RendererScan scan, TargetPainter p, ref bool collected, string hints, bool show)
         {
             var effective = (hints ?? string.Empty).Trim();
             if (effective.Length == 0) return;
@@ -394,12 +398,12 @@ namespace SkyLight.Controllers.Gameplay
 
             if (!collected)
             {
-                p.Collect(effective, excludes, disableMirror: false, colorize: false);
+                p.Collect(scan, effective, excludes, disableMirror: false, colorize: false);
                 collected = true;
             }
             else if (_frame % TargetRefreshInterval == 0)
             {
-                p.Refresh(effective, excludes, disableMirror: false);
+                p.Refresh(scan, effective, excludes, disableMirror: false);
             }
 
             p.SetVisible(show);
@@ -409,16 +413,16 @@ namespace SkyLight.Controllers.Gameplay
         private static string GetCommonVisibilityExcludes()
             => "Mirror;Note;Saber;Arrow;Bomb;Skybox;BloomSkyboxQuad;Debris;Obstacle;PreviewQuad;Feet";
 
-        private void UpdateSideLaneVisibility()
+        private void UpdateSideLaneVisibility(RendererScan scan)
         {
             if (!_sideLanesPainted)
             {
-                _sideLanes.Collect(GetEffectiveSideLaneHints(), GetEffectiveSideLaneExcludes(), disableMirror: false, colorize: true);
+                _sideLanes.Collect(scan, GetEffectiveSideLaneHints(), GetEffectiveSideLaneExcludes(), disableMirror: false, colorize: true);
                 _sideLanesPainted = true;
             }
 
             if (_frame % TargetRefreshInterval == 0)
-                _sideLanes.Refresh(GetEffectiveSideLaneHints(), GetEffectiveSideLaneExcludes(), disableMirror: false);
+                _sideLanes.Refresh(scan, GetEffectiveSideLaneHints(), GetEffectiveSideLaneExcludes(), disableMirror: false);
 
             _sideLanes.SetVisible(_config.ShowSideLanes);
         }
@@ -448,12 +452,12 @@ namespace SkyLight.Controllers.Gameplay
                 "Skybox");
         }
 
-        private void UpdateFloorVisibility()
+        private void UpdateFloorVisibility(RendererScan scan)
         {
             bool wantTracking = !_config.ShowFloor || _floorMode == 1;
             if (wantTracking && !_floorPainted)
             {
-                _floorFlat.Collect(_config.FloorPaintShaderHint, "", disableMirror: _floorMode == 1, colorize: true);
+                _floorFlat.Collect(scan, _config.FloorPaintShaderHint, "", disableMirror: _floorMode == 1, colorize: true);
                 _floorPainted = true;
             }
             else if (!wantTracking && _floorPainted)
