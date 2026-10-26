@@ -29,7 +29,7 @@ namespace SkyLight.Controllers
         // ここに出た名前をそのまま設定の HideObjectHints（; 区切り）へコピーすれば非表示にできる。
         // 既に Hide Objects の対象/除外になっている名前や、他の設定（Bars/Neon/Ring等）で管理済みの
         // 名前には行末に印を付けて、二重登録や巻き添えに気付けるようにする。
-        public static void DumpHideCandidates(Configuration.PluginConfig config)
+        public static string DumpHideCandidates(Configuration.PluginConfig config)
         {
             var hideArr = SplitHints(config.HideObjectHints);
             var exArr = SplitHints(config.HideObjectExcludeHints);
@@ -105,12 +105,14 @@ namespace SkyLight.Controllers
                 sb.AppendLine($"  name='{name}' count={g.Count()} layer={rep.gameObject.layer}({LayerMask.LayerToName(rep.gameObject.layer)}) " +
                               $"path='{path}' size=({b.size.x:0.#},{b.size.y:0.#},{b.size.z:0.#}) shaders=[{shaders}]{tag}");
             }
-            Plugin.Log.Info(sb.ToString());
+            var text = sb.ToString();
+            Plugin.Log.Info(text);
+            return text;
         }
 
         // 現在ロード中の環境シーン名（例: 'BTSEnvironment'）。環境ごとにオブジェクト名が違うため、
         // どの環境でのダンプかをヘッダーに残す。見つからなければアクティブシーン名を返す。
-        private static string GetEnvironmentName()
+        internal static string GetEnvironmentName()
         {
             for (int i = 0; i < UnityEngine.SceneManagement.SceneManager.sceneCount; i++)
             {

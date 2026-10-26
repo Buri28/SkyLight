@@ -14,8 +14,9 @@ namespace SkyLight.Configuration
         // MOD 有効/無効
         public virtual bool Enabled { get; set; } = true;
 
-        // 詳細ログ出力フラグ。true のときだけ Debug レベルの診断ログを出す。
-        public virtual bool DebugLogging { get; set; } = true;
+        // 詳細ログ出力フラグ。true のときだけ Debug レベルの診断ログを出す（既定 OFF）。
+        // 既存の SkyLight.json に値があればそちらが優先される。
+        public virtual bool DebugLogging { get; set; } = false;
 
         // シーン診断ダンプ。曲開始時にカメラ一覧・シェーダー在庫・RenderSettings をログ出力する（DebugLogging が前提）。
         public virtual bool DumpScene { get; set; } = false;
@@ -42,6 +43,8 @@ namespace SkyLight.Configuration
         // ネオン/レーザー（NeonLight レイヤー）を非表示にする。横の動くネオンバーや水色ビームを消す。
         // これらは BloomPrePass で描かれ色塗り不可のため、カメラの描画対象から外して隠す方式。
         public virtual bool HideNeon { get; set; } = false;
+        // CustomBackgrounds（別 MOD）の背景画像を曲中に表示するか。Neon の表示/非表示とは別に選べる。
+        public virtual bool ShowCustomBackground { get; set; } = true;
 
         // ─── 任意オブジェクトの非表示 ───────────────────────────────
         // 名前/パス/シェーダー名の部分一致（; 区切り）で対象を指定して非表示にする。
@@ -54,13 +57,13 @@ namespace SkyLight.Configuration
         public virtual bool ShowFloor { get; set; } = true;
         public virtual bool ShowSideLanes { get; set; } = true;
         public virtual bool PaintFloor { get; set; } = true;
+        // ゲームのミラー画質がオンのときは、床をゲームの反射床のままにして空とノーツを映す。
+        // ミラー画質がオフ、またはこれが OFF のときは FloorColor で直接塗る。
+        public virtual bool MirrorReflection { get; set; } = true;
         public virtual string FloorColor { get; set; } = "#68696C";
         public virtual float FloorBrightness { get; set; } = 1.0f;
         public virtual float FloorAlpha { get; set; } = 1.0f;
         public virtual string FloorPaintShaderHint { get; set; } = "Mirror";
-        // true: 反射(Mirror)を使わず常に床へ直接フラット塗りする（Bloom ON/OFF問わず）。
-        // 新しい背景ドームが反射に映り込んで床が2色に割れる問題を避けたい場合はこちらを使う。
-        public virtual bool FloorDirectPaint { get; set; } = false;
         public virtual string SideLaneHints { get; set; } = "TrackConstruction;FloorConstruction;TrackLane;Lane;Road";
 
         // ─── 表示/非表示のみの対象（Side Lanes と同方式） ───────────────────

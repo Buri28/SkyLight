@@ -9,6 +9,10 @@ namespace SkyLight.Controllers.Gameplay
     // 対象レンダラー（名前/シェーダー名のヒントで一致）を「半透明の単色」へ差し替えるペインター。
     // alpha でオブジェクト自体の不透明度を決め、後ろにあるものが透けて見える（透明度=B方式）。
     // 床・構造物・リングなど用途ごとにインスタンスを使う。
+    //
+    // Bloom ON で光らせないため、描くものは画面のアルファを 0 にする（全画面ブルームはアルファで光る量を決める）。
+    //   不透明：Blend One/Zero・色のアルファ 0。
+    //   半透明：SrcAlpha ブレンドで塗った直後に、同じ形を Blend DstColor Zero・(1,1,1,0) で描いてアルファだけ 0 に戻す。
     internal class TargetPainter
     {
         private readonly string _tag;
@@ -16,23 +20,29 @@ namespace SkyLight.Controllers.Gameplay
         // 反射床(Mirror)は描画直前に自前マテリアルへ戻すので、対象なら Mirror 系コンポーネントを無効化する。
         private readonly List<(Behaviour b, bool origEnabled)> _disabledMirrors = new();
         private readonly HashSet<int> _disabledMirrorIds = new(); // _disabledMirrors の重複防止（線形検索の回避）
+        // 非表示中に止めたネオンの発光（*BloomPrePassLight）。表示に戻すとき・Restore で元に戻す。
+        private readonly List<(Behaviour b, bool origEnabled)> _disabledBloomLights = new();
+        private readonly HashSet<int> _disabledBloomLightIds = new();
         private readonly List<(Renderer renderer, bool origEnabled)> _hiddenRenderers = new();
         private readonly HashSet<int> _hiddenIds = new(); // _hiddenRenderers の重複防止（線形検索の回避）
         private readonly HashSet<Transform> _bloomScannedRoots = new(); // BloomPrePass探索済みのサブツリー根（重複走査防止）
         // 透明度だけモード（colorize=false）：元マテリアルを複製し、半透明化して色は元のまま残す。
         private readonly List<(Renderer renderer, Material[] clones)> _cloned = new();
+        private readonly HashSet<int> _clonedIds = new(); // 複製済みのレンダラー（後から増えた分だけ複製するため）
         private Material? _mat;
+        private Material? _alphaClearMat; // 半透明で塗った形のアルファを 0 に戻す材質（EnsureAlphaClearMaterial）
+        private bool _semi;            // 今の単色塗りが半透明か（材質配列の作り方が変わる）
         private bool _colorize = true;
         private bool _assigned;        // 単色マテリアルを各レンダラーへ代入済みか
         private bool _clonesAssigned;  // 複製マテリアルを代入済みか
         private Color _lastColor = new Color(-1f, -1f, -1f, -1f); // 直近に適用した色（変化なしなら何もしない）
-        private readonly bool _alwaysReassign; // 毎フレーム再代入する（ミラー等が戻してくる対象向け。対象数が少ない床用）
+        private readonly bool _alwaysReassign; // Apply のたびに材質配列を代入し直す（ミラー等が戻してくる床向け。対象は数個）
         private readonly bool _excludeFloorLike; // 構造物判定から床状の広い平面を除外する
         private readonly bool _writeDepth; // 床のように後ろへ色が抜けないよう深度を書き込む
         private readonly HashSet<int> _ids = new(); // 収集済みレンダラーの InstanceID（増分収集の重複防止）
         private bool _refreshSettled;  // Refresh は初回の1回だけ。以降は探索(FindObjectsOfType)を一切行わない
         private bool _logged;
-        private bool _hiding;          // SetVisible(false)で非表示状態にしているか（RefreshByLayerが新規分も揃えるため）
+        private bool _hiding;          // SetVisible(false)で非表示状態にしているか（Refresh が新規分も揃えるため）
 
         public TargetPainter(string tag, bool alwaysReassign = false, bool excludeFloorLike = false, bool writeDepth = false)
         {
@@ -67,7 +77,6 @@ namespace SkyLight.Controllers.Gameplay
                 _ids.Add(e.Renderer.GetInstanceID());
                 _painted.Add((e.Renderer, e.SharedMaterials));
                 DisableMirrorsOn(e.Renderer, disableMirror);
-                DisableBloomPrePassOn(e.Renderer);
             }
 
             LogOnce();
@@ -86,13 +95,12 @@ namespace SkyLight.Controllers.Gameplay
                 if (e.Renderer == null || e.Renderer.gameObject.layer != layer) continue;
                 _ids.Add(e.Renderer.GetInstanceID());
                 _painted.Add((e.Renderer, e.SharedMaterials));
-                DisableBloomPrePassOn(e.Renderer);
             }
 
             LogOnce();
         }
 
-        // ライトショー演出等で後から対象レイヤーへ切り替わるレンダラーを増分で拾う。
+        // 後から対象レイヤーに現れたレンダラーを増分で拾う。実行は1回だけ。
         // 既に非表示中(SetVisible(false)済み)なら、新規追加分もその場で即座に非表示化する。
         public void RefreshByLayer(RendererScan scan, int layer)
         {
@@ -103,13 +111,7 @@ namespace SkyLight.Controllers.Gameplay
                 if (r == null || r.gameObject.layer != layer) continue;
                 if (!_ids.Add(r.GetInstanceID())) continue;
                 _painted.Add((r, e.SharedMaterials));
-                DisableBloomPrePassOn(r);
-                if (_hiding && r.enabled)
-                {
-                    if (_hiddenIds.Add(r.GetInstanceID()))
-                        _hiddenRenderers.Add((r, true));
-                    r.enabled = false;
-                }
+                if (_hiding) HideOne(r);
             }
 
             // 探索は初回の1回だけ。以降は完全に何もしない。
@@ -121,11 +123,14 @@ namespace SkyLight.Controllers.Gameplay
         // これがRenderer無効化だけでは消えない「残光」の正体なので、コンポーネント自体を無効化する。
         // 紐づき先は親1階層とは限らないため、自分自身・全祖先・子孫までまとめて探す。
         // Destroy は同じGameObject上の別スクリプトが破棄後の参照で毎フレーム例外を吐いた前例があるため使わない。
+        // 非表示にするときだけ呼ぶ（表示したまま発光だけが消えないように）。
         private void DisableBloomPrePassOn(Renderer r)
         {
             // 同じ親を持つレンダラーが多数マッチする環境（ネオン管群など）では全く同じ範囲を
             // 何度も走査することになるため、走査済みのサブツリー根を覚えてスキップする。
-            var subtree = r.transform.parent != null ? r.transform.parent : r.transform;
+            // 親がシーン直下（Environment など）のときは、親配下＝環境全体になるので自分の配下だけにする。
+            var parent = r.transform.parent;
+            var subtree = parent != null && parent.parent != null ? parent : r.transform;
             if (!_bloomScannedRoots.Add(subtree)) return;
 
             DisableBloomPrePassIn(r.GetComponentsInParent<Behaviour>(true)); // 自分自身＋全祖先
@@ -139,13 +144,32 @@ namespace SkyLight.Controllers.Gameplay
             {
                 if (comp == null) continue;
                 if (comp.GetType().Name.IndexOf("BloomPrePassLight", StringComparison.OrdinalIgnoreCase) < 0) continue;
-                if (!_disabledMirrorIds.Add(comp.GetInstanceID())) continue;
-                _disabledMirrors.Add((comp, comp.enabled));
+                if (!_disabledBloomLightIds.Add(comp.GetInstanceID())) continue;
+                _disabledBloomLights.Add((comp, comp.enabled));
                 comp.enabled = false;
             }
         }
 
-        // 後から出現した対象を増分で追加する（リング等は再生開始から少し遅れて現れるため）。
+        private void RestoreBloomLights()
+        {
+            foreach (var (b, origEnabled) in _disabledBloomLights)
+                if (b != null) b.enabled = origEnabled;
+            _disabledBloomLights.Clear();
+            _disabledBloomLightIds.Clear();
+            _bloomScannedRoots.Clear();
+        }
+
+        // 1つのレンダラーを非表示にする（元の enabled を記録し、ネオンの発光も止める）。
+        private void HideOne(Renderer r)
+        {
+            if (r == null) return;
+            if (_hiddenIds.Add(r.GetInstanceID()))
+                _hiddenRenderers.Add((r, r.enabled));
+            r.enabled = false;
+            DisableBloomPrePassOn(r);
+        }
+
+        // 後から出現した対象を増分で追加する（リング等は最初のフレームで生成されるため）。
         // 実行は Collect 後の1回だけ。以降は完全に何もしない。
         public void Refresh(RendererScan scan, string hints, string excludeHints, bool disableMirror, string excludeOverrideHints = "")
         {
@@ -163,14 +187,8 @@ namespace SkyLight.Controllers.Gameplay
                 if (!_ids.Add(r.GetInstanceID())) continue; // 既知はスキップ
                 _painted.Add((r, e.SharedMaterials));
                 DisableMirrorsOn(r, disableMirror);
-                DisableBloomPrePassOn(r);
                 // 非表示中(SetVisible(false)済み)なら、新規に見つかった分もその場で即座に非表示化する。
-                if (_hiding && r.enabled)
-                {
-                    if (_hiddenIds.Add(r.GetInstanceID()))
-                        _hiddenRenderers.Add((r, true));
-                    r.enabled = false;
-                }
+                if (_hiding) HideOne(r);
             }
 
             // 新規が増えたら塗り直し（代入し直して新規にも適用する）。
@@ -230,7 +248,7 @@ namespace SkyLight.Controllers.Gameplay
 
         public void Apply(Color rgba)
         {
-            // 何も変わっていなければ完全に何もしない（毎フレーム呼ばれても実質ゼロコスト）。
+            // 何も変わっていなければ何もしない。
             // alwaysReassign（床=ミラーが戻す）と、色が変わったとき、新規収集直後だけ実処理する。
             bool done = _colorize ? _assigned : _clonesAssigned;
             if (done && !_alwaysReassign && rgba == _lastColor)
@@ -242,40 +260,56 @@ namespace SkyLight.Controllers.Gameplay
 
             if (!_colorize)
             {
-                ApplyKeepOriginal(rgba, tint: false);
+                ApplyKeepOriginal(rgba);
                 return;
             }
 
             EnsureMaterial(rgba);   // 色を更新（_mat は共有なので安い）
             if (_mat == null) return;
 
-            // マテリアル配列の代入は初回だけ（毎フレーム代入すると重い／GCが走る）。
-            // ただし alwaysReassign（床＝ミラーが戻してくる）の場合は毎フレーム代入してミラーに勝つ。
+            // マテリアル配列の代入は、初回・新規収集の後・不透明⇔半透明が変わったときだけ（毎回だと GC が走る）。
             if (_assigned && !_alwaysReassign) return;
+            var clear = _semi ? EnsureAlphaClearMaterial() : null;
             foreach (var (renderer, original) in _painted)
             {
                 if (renderer == null) continue;
                 var mats = new Material[original.Length];
                 for (int i = 0; i < mats.Length; i++) mats[i] = _mat;
-                renderer.sharedMaterials = mats;
+                renderer.sharedMaterials = WithAlphaClear(mats, clear);
             }
             _assigned = true;
         }
 
-        // レーザー/ネオンは譜面のライトショーに連動してゲーム側が毎フレーム enabled を操作することがあるため、
-        // 1回の無効化だけでは点灯イベントの度に復活してしまう。非表示にしている間、毎フレーム軽量に
-        // enabled=false へ戻す（既に false なら何もしないので、点灯していない限りほぼゼロコスト）。
-        public void ReassertHidden()
+        // 半透明のときは、材質配列の最後にアルファを消す材質を足す（同じ形をもう1回描く）。
+        // 複数サブメッシュのメッシュでは、追加の材質は最後のサブメッシュにだけかかる（Unity の仕様）。
+        private static Material[] WithAlphaClear(Material[] mats, Material? clear)
         {
-            if (_hiddenRenderers.Count == 0) return;
-            foreach (var (renderer, _) in _hiddenRenderers)
-                if (renderer != null && renderer.enabled) renderer.enabled = false;
+            if (clear == null) return mats;
+            var result = new Material[mats.Length + 1];
+            Array.Copy(mats, result, mats.Length);
+            result[mats.Length] = clear;
+            return result;
         }
 
-        // 診断用: 収集済みのうち、まだ enabled=true のままのレンダラー数（0でなければ非表示化漏れ）。
-        public int DebugCountEnabled() => _painted.Count(p => p.renderer != null && p.renderer.enabled);
+        // 半透明で塗った形のアルファを 0 に戻す材質：Blend DstColor Zero・色 (1,1,1,0)
+        // → RGB はそのまま、アルファ = 0。キューは塗り(Transparent-2)の後、レーザー等の半透明物(Transparent)の前。
+        private Material? EnsureAlphaClearMaterial()
+        {
+            if (_alphaClearMat != null) return _alphaClearMat;
+            var shader = Shader.Find("Hidden/Internal-Colored");
+            if (shader == null) return null;
+            _alphaClearMat = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };
+            _alphaClearMat.SetColor("_Color", new Color(1f, 1f, 1f, 0f));
+            _alphaClearMat.SetInt("_SrcBlend", (int)BlendMode.DstColor);
+            _alphaClearMat.SetInt("_DstBlend", (int)BlendMode.Zero);
+            _alphaClearMat.SetInt("_Cull", (int)CullMode.Off);
+            _alphaClearMat.SetInt("_ZWrite", 0);
+            _alphaClearMat.SetInt("_ZTest", (int)CompareFunction.LessEqual);
+            _alphaClearMat.renderQueue = (int)RenderQueue.Transparent - 1;
+            return _alphaClearMat;
+        }
 
-        // visible=false は Renderer を無効化する。
+        // visible=false は Renderer を無効化する（ネオンの発光も止める）。true で元に戻す。
         // 破棄(Destroy)も試したが、Spectrogram等 同じGameObject上のスクリプトが破棄後のRendererを
         // 参照し続けて毎フレーム例外を吐く事例があったため、安全な無効化のみに戻した。
         public void SetVisible(bool visible)
@@ -287,42 +321,37 @@ namespace SkyLight.Controllers.Gameplay
                     if (renderer != null) renderer.enabled = origEnabled;
                 _hiddenRenderers.Clear();
                 _hiddenIds.Clear();
+                RestoreBloomLights();
                 return;
             }
 
             foreach (var (renderer, _) in _painted)
-            {
-                if (renderer == null) continue;
-                if (!_hiddenIds.Add(renderer.GetInstanceID())) continue;
-                _hiddenRenderers.Add((renderer, renderer.enabled));
-                renderer.enabled = false;
-            }
+                if (renderer != null && !_hiddenIds.Contains(renderer.GetInstanceID()))
+                    HideOne(renderer);
         }
 
         // 元の色・テクスチャを残したまま、マテリアルを複製して半透明化する（透明度だけモード）。
         // シェーダーがアルファ合成に対応していれば透ける（対応しないシェーダーでは効果が出ないことがある）。
-        private void ApplyKeepOriginal(Color rgba, bool tint)
+        private void ApplyKeepOriginal(Color rgba)
         {
-            // 初回だけ複製を作る。
-            if (_cloned.Count == 0)
+            // まだ複製していないレンダラー（初回と、後から増えた分）だけ複製を作る。
+            foreach (var (renderer, original) in _painted)
             {
-                foreach (var (renderer, original) in _painted)
+                if (renderer == null || !_clonedIds.Add(renderer.GetInstanceID())) continue;
+                var clones = new Material[original.Length];
+                for (int i = 0; i < original.Length; i++)
                 {
-                    if (renderer == null) continue;
-                    var clones = new Material[original.Length];
-                    for (int i = 0; i < original.Length; i++)
-                    {
-                        var src = original[i];
-                        if (src == null) { clones[i] = null!; continue; }
-                        var clone = new Material(src) { hideFlags = HideFlags.HideAndDontSave };
-                        clone.SetInt("_SrcBlend", (int)BlendMode.SrcAlpha);
-                        clone.SetInt("_DstBlend", (int)BlendMode.OneMinusSrcAlpha);
-                        clone.SetInt("_ZWrite", 0);
-                        clone.renderQueue = (int)RenderQueue.Transparent;
-                        clones[i] = clone;
-                    }
-                    _cloned.Add((renderer, clones));
+                    var src = original[i];
+                    if (src == null) { clones[i] = null!; continue; }
+                    var clone = new Material(src) { hideFlags = HideFlags.HideAndDontSave };
+                    clone.SetInt("_SrcBlend", (int)BlendMode.SrcAlpha);
+                    clone.SetInt("_DstBlend", (int)BlendMode.OneMinusSrcAlpha);
+                    clone.SetInt("_ZWrite", 0);
+                    clone.renderQueue = (int)RenderQueue.Transparent - 2; // 直後(Transparent-1)にアルファを消す
+                    clones[i] = clone;
                 }
+                _cloned.Add((renderer, clones));
+                _clonesAssigned = false;
             }
 
             // 透明度の更新（安い）。
@@ -333,28 +362,17 @@ namespace SkyLight.Controllers.Gameplay
                 {
                     if (c == null || !c.HasProperty("_Color")) continue;
                     var col = c.GetColor("_Color");
-                    if (tint)
-                    {
-                        col = rgba;
-                    }
-                    else
-                    {
-                        col.a = Mathf.Clamp01(rgba.a);
-                    }
+                    col.a = Mathf.Clamp01(rgba.a);
                     c.SetColor("_Color", col);
                 }
             }
 
-            // 複製マテリアルの代入は初回だけ。
+            // 複製マテリアルの代入は、新しく複製したときだけ。
             if (_clonesAssigned) return;
+            var clear = EnsureAlphaClearMaterial();
             foreach (var (renderer, clones) in _cloned)
-                if (renderer != null) renderer.sharedMaterials = clones;
+                if (renderer != null) renderer.sharedMaterials = WithAlphaClear(clones, clear);
             _clonesAssigned = true;
-        }
-
-        public void SetColor(Color rgba)
-        {
-            if (_mat != null) _mat.SetColor("_Color", rgba);
         }
 
         public void Restore()
@@ -372,14 +390,17 @@ namespace SkyLight.Controllers.Gameplay
                 foreach (var c in clones)
                     if (c != null) UnityEngine.Object.Destroy(c);
             _cloned.Clear();
+            _clonedIds.Clear();
 
             foreach (var (b, origEnabled) in _disabledMirrors)
                 if (b != null) b.enabled = origEnabled;
             _disabledMirrors.Clear();
             _disabledMirrorIds.Clear();
-            _bloomScannedRoots.Clear();
+            RestoreBloomLights();
 
             if (_mat != null) { UnityEngine.Object.Destroy(_mat); _mat = null; }
+            if (_alphaClearMat != null) { UnityEngine.Object.Destroy(_alphaClearMat); _alphaClearMat = null; }
+            _semi = false;
             _ids.Clear();
             _assigned = false;
             _clonesAssigned = false;
@@ -395,27 +416,39 @@ namespace SkyLight.Controllers.Gameplay
             // カウンター等）を不透明として遮ってしまう。深度書き込みは完全不透明のときだけ行う。
             bool writeDepthNow = _writeDepth && rgba.a >= 0.999f;
 
-            if (_mat != null)
+            if (_mat == null)
             {
-                _mat.SetColor("_Color", rgba);
-                _mat.SetInt("_ZWrite", writeDepthNow ? 1 : 0);
-                return;
+                var shader = Shader.Find("Hidden/Internal-Colored");
+                if (shader == null)
+                {
+                    Plugin.Log.Warn($"[SkyLight][{_tag}] 'Hidden/Internal-Colored' not found; cannot paint.");
+                    return;
+                }
+                _mat = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };
+                _mat.SetInt("_Cull", (int)CullMode.Off);
             }
 
-            var shader = Shader.Find("Hidden/Internal-Colored");
-            if (shader == null)
+            bool semi = rgba.a < 0.999f;
+            if (semi != _semi) { _semi = semi; _assigned = false; } // アルファ消しの有無が変わるので配列を作り直す
+
+            if (!semi)
             {
-                Plugin.Log.Warn($"[SkyLight][{_tag}] 'Hidden/Internal-Colored' not found; cannot paint.");
-                return;
+                // 不透明：One/Zero で上書きし、アルファは 0 で書く（白飛び防止）。
+                // 深度を書くので、半透明物より前（AlphaTest キュー）に描く。
+                _mat.SetInt("_SrcBlend", (int)BlendMode.One);
+                _mat.SetInt("_DstBlend", (int)BlendMode.Zero);
+                _mat.SetColor("_Color", new Color(rgba.r, rgba.g, rgba.b, 0f));
+                _mat.renderQueue = (int)RenderQueue.AlphaTest;
             }
-            _mat = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };
-            _mat.SetColor("_Color", rgba);
-            // 半透明合成（後ろが透ける）。
-            _mat.SetInt("_SrcBlend", (int)BlendMode.SrcAlpha);
-            _mat.SetInt("_DstBlend", (int)BlendMode.OneMinusSrcAlpha);
-            _mat.SetInt("_Cull", (int)CullMode.Off);
+            else
+            {
+                // 半透明合成（後ろが透ける）。直後に EnsureAlphaClearMaterial の材質でアルファを 0 に戻す。
+                _mat.SetInt("_SrcBlend", (int)BlendMode.SrcAlpha);
+                _mat.SetInt("_DstBlend", (int)BlendMode.OneMinusSrcAlpha);
+                _mat.SetColor("_Color", rgba);
+                _mat.renderQueue = (int)RenderQueue.Transparent - 2;
+            }
             _mat.SetInt("_ZWrite", writeDepthNow ? 1 : 0);
-            _mat.renderQueue = (int)RenderQueue.Transparent;
         }
 
         private void LogOnce()
@@ -429,7 +462,7 @@ namespace SkyLight.Controllers.Gameplay
                     var sh = p.renderer.sharedMaterial != null && p.renderer.sharedMaterial.shader != null ? p.renderer.sharedMaterial.shader.name : "?";
                     return $"{GetPath(p.renderer.transform)}<{sh}>";
                 }));
-                return $"[SkyLight][{_tag}] painted renderers found: {_painted.Count}, mirrors disabled: {_disabledMirrors.Count} names=[{names}]";
+                return $"[SkyLight][{_tag}] painted renderers found: {_painted.Count}, mirror components disabled: {_disabledMirrors.Count} names=[{names}]";
             });
             _logged = true;
         }

@@ -20,6 +20,9 @@ namespace SkyLight.Installers
         {
             Container.BindInstance(_config).AsSingle();
 
+            // 自動テスト（--skylight-autotest のときだけ曲を自動で始める）
+            Container.BindInterfacesTo<AutoTest.AutoTestLevelStarter>().AsSingle().NonLazy();
+
             // 設定画面コントローラー
             Container.Bind<SkyLightSettingsController>()
                      .FromNewComponentAsViewController()

@@ -1,6 +1,7 @@
 using SkyLight.Configuration;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using Zenject;
@@ -11,8 +12,7 @@ namespace SkyLight.Controllers.Gameplay
     /// ゲームプレイシーンで <see cref="RenderSettings"/> とカメラ背景を書き換え、ステージを明るくし
     /// 黒い虚無を空色で塗ってノーツとの明暗差を縮めるコントローラー。ブレ（残像）解消の本体。
     ///
-    /// CustomPlatforms は非同期にプラットフォームをロードし、その際 RenderSettings を上書きしうるため、
-    /// 既定では毎フレーム再適用してこちらの設定で確実に「勝つ」。
+    /// 塗り・非表示は読み込み時（Initialize）と3フレーム後の2回だけ行い、曲の間は Bloom の ON/OFF 維持以外は何もしない。
     /// </summary>
     public class SkyLightController : IInitializable, ILateTickable, IDisposable
     {
@@ -22,7 +22,7 @@ namespace SkyLight.Controllers.Gameplay
         private readonly SkyBackdrop _backdrop = new();
         // 全画面ブルームの ON/OFF。
         private readonly BloomTamer _bloomTamer = new();
-        // 床：Bloom ON は FloorColor を反射ドームに塗って反射、Bloom OFF はフラット塗り。
+        // 床：設定に関係なくいつも FloorColor で直接塗る（Mirror は止める）。
         private readonly TargetPainter _floorFlat = new("floor", alwaysReassign: true, writeDepth: true);
         private readonly TargetPainter _sideLanes = new("side-lanes");
         // 表示/非表示のみの対象（Side Lanes と同方式）：ライト・ロゴ・その他の構造物。
@@ -32,7 +32,7 @@ namespace SkyLight.Controllers.Gameplay
         // 構造物・バー・リングは半透明で着色するペインター。
         private readonly TargetPainter _structures = new("struct", excludeFloorLike: true);
         private readonly TargetPainter _bars = new("bars");
-        // リングは曲の間ずっと新規に出現し続けるため、他と違って「出揃った」判定をせず毎回スキャンし続ける。
+        // リングは最初のフレームで生成されるので、3フレーム後の2回目で拾う。
         private readonly TargetPainter _ring = new("ring");
         // GlowLineL/R 等、NeonLightレイヤー(13)に属さない光る線。HideNeonと連動して隠す。
         private readonly TargetPainter _glowLines = new("glowline");
@@ -44,11 +44,22 @@ namespace SkyLight.Controllers.Gameplay
         // 対象名は DumpScene ログの "Hide candidates" から拾って設定に追加する運用。
         private readonly TargetPainter _hider = new("hide");
         private string _hiderHints = "";
+        // 環境ごとの非表示リスト（UserData/SkyLight/Environments/HideObjects.json）。曲の読み込み時に1回だけ読む。
+        private string _environment = "";
+        private bool _useMirrorReflection; // 床をゲームの反射床のままにするか（Initialize で決める）
+        // CustomBackgrounds（別 MOD）の背景の球 "_SkyBGObject"。NeonLight レイヤー(13)に置かれるので、
+        // Neon を非表示にすると一緒に消える。表示するときは曲の間だけ別のレイヤーへ移し、終わったら戻す。
+        private Renderer? _customBg;
+        private int _customBgOrigLayer;
+        private bool _customBgOrigEnabled;
+        private const string CustomBackgroundObjectName = "_SkyBGObject";
+        private const int CustomBackgroundLayer = 4; // 床の反射に映らないレイヤー（空ドームと同じ）
+        private string _envHideHints = "";
 
         private bool _active;
         private int _frame;
 
-        private bool _isFirstApply = false;
+        private bool _latePassDone; // 3フレーム後の2回目を済ませたか
 
 
         // 触ったカメラの元 clearFlags / 背景色（復元用）。シーンをまたいで生き残るものがあるため必ず戻す。
@@ -117,15 +128,25 @@ namespace SkyLight.Controllers.Gameplay
 
             _bloomTamer.Capture();
 
-            // 起動時は軽い処理だけ（カメラ背景＝反射床の色）。重い塗り(ApplyMode)は起動が落ち着く約1秒後に回す。
-            ApplyCameraBackground();
+            // ミラー画質がオンなら床は反射床のまま（空とノーツを映す）。1プレイ中は変わらないので1回だけ調べる。
+            _useMirrorReflection = _config.MirrorReflection && _config.ShowFloor && MirrorProbe.IsReflectionOn();
+            Plugin.DebugInfo(() => $"[SkyLight][floor] mirror reflection={_useMirrorReflection}");
+
+            _environment = SceneDiagnostics.GetEnvironmentName();
+            _envHideHints = EnvironmentHideList.GetHideHints(_environment);
+            EnvironmentHideList.LastPlayed = _environment;
+            Plugin.DebugInfo(() => $"[SkyLight] environment='{_environment}' env hide='{_envHideHints}'");
+
+            // 読み込み時に一度塗る：最初からあるもの（背景・床・構造物など）は1フレーム目から非表示/着色される。
+            // 後から出てくるもの（リング等）は3フレーム後の2回目(IsLatePass)で増分収集する。
+            SafeApplyMode();
             _active = true;
-            Plugin.DebugLog("[SkyLight] Applied on gameplay scene (paint deferred to ~1s).");
+            Plugin.DebugLog("[SkyLight] Applied on gameplay scene (late objects at frame 3).");
         }
 
         // LateTick（Update 後・描画前）。毎フレームは Bloom の強制OFF維持だけ（ライト演出で再有効化されても
         // 白飛びさせないため、対象のenabledを確認するだけの軽い処理）。
-        // カメラ背景・重い塗り（ApplyMode：FindObjectsOfType を含む）は、起動直後と約1秒後の2回だけ実行する。
+        // カメラ背景・重い塗り（ApplyMode：FindObjectsOfType を含む）は、読み込み時と3フレーム後の2回だけ実行する。
         public void LateTick()
         {
             if (!_active) return;
@@ -133,14 +154,18 @@ namespace SkyLight.Controllers.Gameplay
 
             _bloomTamer.Reassert(!IsBloomOn());
 
-            if (!_isFirstApply && _frame % 60 == 0)
+            if (!_latePassDone && _frame == TargetRefreshInterval)
             {
-                // 順序が重要: ApplyMode 内の FillCameraBackgrounds が背景ドームの色でカメラ背景を
-                // 上書きするため、床の色(ApplyCameraBackground)は必ずその後に適用して確定させる。
-                ApplyMode(); // 後から出現する対象（リング等）も拾って塗る
-                ApplyCameraBackground();
-                _isFirstApply = true;
+                _latePassDone = true;
+                SafeApplyMode(); // 後から出現する対象（リング等）も拾って塗る
             }
+        }
+
+        // 塗り処理で例外が出ても、プレイ画面の初期化や他の LateTick を止めないようにする。
+        private void SafeApplyMode()
+        {
+            try { ApplyMode(); }
+            catch (Exception ex) { Plugin.Log.Warn($"[SkyLight] ApplyMode failed: {ex}"); }
         }
 
         // ─── 着色の適用（全対象 半透明＝B方式） ───────────────────────────
@@ -150,9 +175,12 @@ namespace SkyLight.Controllers.Gameplay
         // ドームは無地の単色キューブなので大きくしても見た目は変わらない。カメラの far クリップ内で、
         // 実在するオブジェクトの最大奥行きより十分大きい値にする。
         private const float DomeScale = 1000f;
-        private const int TargetRefreshInterval = 60; // 開始約1秒後に一度だけ後発の対象を増分収集（以降は何もしない）
+        private const int TargetRefreshInterval = 3; // 開始3フレーム後に一度だけ後発の対象（リング等。最初のフレームで生成される）を増分収集（以降は何もしない）
+        // ApplyMode の2回目（3フレーム後）かどうか。1回目は読み込み時(Initialize, _frame=0)。
+        // Refresh は1回呼ぶと以後は探索しないので、必ず2回目だけで呼ぶ。
+        private bool IsLatePass => _frame > 0;
         private bool _domeBuilt;
-        private int _floorMode; // 0=Bloom ONでカメラ背景に映す / 1=Bloom OFFでフラット塗り
+        private int _floorMode; // 0=床を塗らない / 1=フラット塗り
         private bool _floorPainted;
         private bool _sideLanesPainted;
         private bool _lightsPainted;
@@ -165,7 +193,7 @@ namespace SkyLight.Controllers.Gameplay
         private void ApplyMode()
         {
             // 診断: Initialize()時点だと実環境がまだ読み込み切っていないことがあるため、
-            // 本塗りと同じこのタイミング(約1秒後)でも再度ダンプする（DumpSceneのときだけ）。
+            // 本塗りと同じこのタイミング(3フレーム後)でも再度ダンプする（DumpSceneのときだけ）。
             if (_config.DumpScene)
             {
                 try { SceneDiagnostics.DumpHideCandidates(_config); }
@@ -188,7 +216,7 @@ namespace SkyLight.Controllers.Gameplay
             // 背景ドーム。Sky Background ON 時に元背景を置き換える。
             if (useBackdrop && !_domeBuilt)
             {
-                _backdrop.Build(scan, _config.BackgroundShaderHints, GetDomeColor(), DomeScale);
+                _backdrop.Build(scan, _config.BackgroundShaderHints, GetDomeColor(), DomeScale, _useMirrorReflection);
                 _domeBuilt = true;
             }
             else if (!useBackdrop && _domeBuilt)
@@ -204,10 +232,10 @@ namespace SkyLight.Controllers.Gameplay
                 FillCameraBackgrounds();
             }
 
-            // 床の色は FloorColor。塗り方が Bloom で違う：
-            //  ① Bloom ON  → メインカメラの backgroundColor を FloorColor にする（ミラーが反射＝床に映る・直接背景は据え置きで白飛びしない）。Apply() で処理。
-            //  ② Bloom OFF → 床に直接フラット塗り。
-            int wantFloorMode = (_config.PaintFloor && _config.ShowFloor && (!bloomOn || _config.FloorDirectPaint)) ? 1 : 0;
+            // 床は Bloom やゲームのミラー画質の設定に関係なく、いつも FloorColor で直接塗る（Mirror は止める）。
+            // 不透明ならアルファ 0 で描くので Bloom ON でも白飛びしない（TargetPainter.EnsureMaterial）。
+            // 以前の「カメラ背景色を反射で床に映す」方式は、ミラー画質オフだと効かないので廃止した。
+            int wantFloorMode = (_config.PaintFloor && _config.ShowFloor && !_useMirrorReflection) ? 1 : 0;
             if (wantFloorMode != _floorMode)
             {
                 _floorFlat.Restore();
@@ -241,6 +269,9 @@ namespace SkyLight.Controllers.Gameplay
             if (_ringPainted)
                 _ring.SetVisible(_config.ShowRing);
 
+            // CustomBackgrounds の背景。ネオンの処理より先に、レイヤーを移しておく（Neon 非表示に巻き込まれないように）。
+            ApplyCustomBackground(scan);
+
             // ネオン/レーザー(NeonLightレイヤー)の表示/非表示。横の動くネオンバー・水色ビームを消す。
             ApplyNeonVisibility(scan);
 
@@ -248,11 +279,46 @@ namespace SkyLight.Controllers.Gameplay
             ApplyHideObjects(scan);
         }
 
-        // HideObjectHints（; 区切りの部分一致）に一致するレンダラーを非表示にする。
-        // 収集はこの ApplyMode のタイミング（曲開始＋約1秒後）だけで、毎フレーム処理はしない。
+        // 環境ごとの候補に載せるか。プレイヤー・HUD・ノーツ・セイバーの効果・SkyLight 自身など
+        // 「環境の物ではない」と分かっている物を除く（カスタムプラットフォームの物は残るよう、除外方式にする）。
+        private static readonly string[] NonEnvironmentRoots =
+            { "Wrapper", "GameCore", "HsvFlyingEffect", "BurnPS", "SaberBurnMarkLine", "SaberTrailRenderer",
+              "ObstacleSaberSparkleEffect", "_SkyBGObject", "SkyLightBackdrop" };
+        // まとまりの名前（例 Environment/Car4/Body/Body → "Car4"、BigTrackLaneRing(Clone)/... → そのまま）。
+        // 車1台・リング1組のように、部品をまとめて非表示にしたいときに選べるよう候補に載せる。
+        private static string? GroupName(string path)
+        {
+            var parts = path.Split('/');
+            if (parts.Length <= 2) return null;
+            return parts[0] == "Environment" ? parts[1] : parts[0];
+        }
+
+        private static bool IsEnvironmentCandidate(string name, string path)
+        {
+            int slash = path.IndexOf('/');
+            var root = slash >= 0 ? path.Substring(0, slash) : path;
+            if (NonEnvironmentRoots.Any(r => root.StartsWith(r, StringComparison.OrdinalIgnoreCase))) return false;
+            foreach (var x in GetCommonVisibilityExcludes().Split(';'))
+                if (root.IndexOf(x, StringComparison.OrdinalIgnoreCase) >= 0 || name.IndexOf(x, StringComparison.OrdinalIgnoreCase) >= 0)
+                    return false;
+            return true;
+        }
+
+        // HideObjectHints（全環境共通）と、環境ごとの Hide（HideObjects.json）に一致するレンダラーを非表示にする。
+        // 収集はこの ApplyMode のタイミング（読み込み時＋3フレーム後）だけで、毎フレーム処理はしない。
         private void ApplyHideObjects(RendererScan scan)
         {
-            var hints = (_config.HideObjectHints ?? string.Empty).Trim();
+            var hints = MergeHints(_config.HideObjectHints, _envHideHints.Split(';'));
+
+            // まだファイルに無い環境なら、選ぶときの参考に候補名を書き足す（2回目＝リング等も出揃った時点で1回だけ）。
+            if (IsLatePass && _environment.IndexOf("Environment", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                EnvironmentHideList.AddEnvironmentIfMissing(_environment, scan.Entries
+                    .Where(e => e.Renderer != null && IsEnvironmentCandidate(e.Name, e.Path))
+                    .SelectMany(e => new[] { e.Name, GroupName(e.Path) })
+                    .Where(n => !string.IsNullOrEmpty(n))!);
+            }
+
             if (hints != _hiderHints)
             {
                 // ヒントが変わったら前回の非表示を戻してから収集し直す。
@@ -261,8 +327,44 @@ namespace SkyLight.Controllers.Gameplay
                 if (hints.Length > 0)
                     _hider.Collect(scan, hints, _config.HideObjectExcludeHints, disableMirror: false, colorize: false);
             }
+            else if (IsLatePass && hints.Length > 0)
+            {
+                _hider.Refresh(scan, hints, _config.HideObjectExcludeHints, disableMirror: false);
+            }
             if (hints.Length > 0)
                 _hider.SetVisible(false);
+        }
+
+        private void ApplyCustomBackground(RendererScan scan)
+        {
+            if (_customBg == null)
+            {
+                foreach (var e in scan.Entries)
+                    if (e.Renderer != null && e.Name == CustomBackgroundObjectName) { _customBg = e.Renderer; break; }
+                if (_customBg == null) return; // CustomBackgrounds が入っていない／無効
+                _customBgOrigLayer = _customBg.gameObject.layer;
+                _customBgOrigEnabled = _customBg.enabled;
+            }
+
+            if (_config.ShowCustomBackground)
+            {
+                _customBg.gameObject.layer = CustomBackgroundLayer;
+                _customBg.enabled = _customBgOrigEnabled;
+            }
+            else
+            {
+                _customBg.enabled = false;
+            }
+        }
+
+        private void RestoreCustomBackground()
+        {
+            if (_customBg != null)
+            {
+                _customBg.gameObject.layer = _customBgOrigLayer;
+                _customBg.enabled = _customBgOrigEnabled;
+            }
+            _customBg = null;
         }
 
         // NeonLight レイヤー(13)を全カメラの cullingMask から外す/戻す。BloomPrePass のネオンは色塗り不可なので、
@@ -298,6 +400,10 @@ namespace SkyLight.Controllers.Gameplay
                 _glowLines.Collect(scan, "GlowLine", "", disableMirror: false, colorize: false);
                 _glowLinesCollected = true;
             }
+            else if (IsLatePass)
+            {
+                _glowLines.Refresh(scan, "GlowLine", "", disableMirror: false);
+            }
             _glowLines.SetVisible(!_config.HideNeon);
 
             // 保険: cullingMask除外がBloom専用パスに効かないケースに備え、NeonLightレイヤーの
@@ -306,6 +412,10 @@ namespace SkyLight.Controllers.Gameplay
             {
                 _neonRenderers.CollectByLayer(scan, _neonLayer);
                 _neonRenderersCollected = true;
+            }
+            else if (IsLatePass)
+            {
+                _neonRenderers.RefreshByLayer(scan, _neonLayer);
             }
             _neonRenderers.SetVisible(!_config.HideNeon);
         }
@@ -324,8 +434,8 @@ namespace SkyLight.Controllers.Gameplay
             }
             if (painted)
             {
-                // リング等は再生開始から少し遅れて現れるため、開始約1秒後に一度だけ増分収集する（以降 Refresh は何もしない）。
-                if (_frame % TargetRefreshInterval == 0)
+                // リング等は最初のフレームで生成されるため、3フレーム後に一度だけ増分収集する（以降 Refresh は何もしない）。
+                if (IsLatePass)
                     p.Refresh(scan, hints, exclude, disableMirror, excludeOverride);
                 p.Apply(rgba);
             }
@@ -379,7 +489,7 @@ namespace SkyLight.Controllers.Gameplay
                 _bars.Collect(scan, GetEffectiveBarHints(), _config.BarExcludeHints, disableMirror: false, colorize: true);
                 _barsPainted = true;
             }
-            else if (_frame % TargetRefreshInterval == 0)
+            else if (IsLatePass)
             {
                 _bars.Refresh(scan, GetEffectiveBarHints(), _config.BarExcludeHints, disableMirror: false);
             }
@@ -388,7 +498,7 @@ namespace SkyLight.Controllers.Gameplay
         }
 
         // 表示/非表示のみの対象（ライト・ロゴ・その他の構造物）。Side Lanes と同じく
-        // 初回に収集し、約1秒後に一度だけ増分収集して、表示状態を設定に合わせる。
+        // 初回に収集し、3フレーム後に一度だけ増分収集して、表示状態を設定に合わせる。
         // ノーツ/セイバー等を巻き込まないよう共通の除外を常に適用する。
         private void UpdateVisibilityOnly(RendererScan scan, TargetPainter p, ref bool collected, string hints, bool show)
         {
@@ -401,7 +511,7 @@ namespace SkyLight.Controllers.Gameplay
                 p.Collect(scan, effective, excludes, disableMirror: false, colorize: false);
                 collected = true;
             }
-            else if (_frame % TargetRefreshInterval == 0)
+            else if (IsLatePass)
             {
                 p.Refresh(scan, effective, excludes, disableMirror: false);
             }
@@ -421,7 +531,7 @@ namespace SkyLight.Controllers.Gameplay
                 _sideLanesPainted = true;
             }
 
-            if (_frame % TargetRefreshInterval == 0)
+            if (IsLatePass)
                 _sideLanes.Refresh(scan, GetEffectiveSideLaneHints(), GetEffectiveSideLaneExcludes(), disableMirror: false);
 
             _sideLanes.SetVisible(_config.ShowSideLanes);
@@ -511,17 +621,20 @@ namespace SkyLight.Controllers.Gameplay
 
             _backdrop.Cleanup();
             _bloomTamer.Restore();
-            _floorFlat.Restore();
-            _sideLanes.Restore();
-            _lights.Restore();
-            _logo.Restore();
-            _otherStructures.Restore();
-            _structures.Restore();
-            _bars.Restore();
-            _ring.Restore();
-            _glowLines.Restore();
-            _neonRenderers.Restore();
+            RestoreCustomBackground();
+            // ApplyMode で集めた順の逆順に戻す。同じレンダラーを複数のペインターが触ったとき、
+            // 最初に触ったペインターが記録した「本当の元の状態」が最後に書き戻されるようにするため。
             _hider.Restore();
+            _neonRenderers.Restore();
+            _glowLines.Restore();
+            _ring.Restore();
+            _bars.Restore();
+            _structures.Restore();
+            _otherStructures.Restore();
+            _logo.Restore();
+            _lights.Restore();
+            _sideLanes.Restore();
+            _floorFlat.Restore();
             _hiderHints = "";
             _domeBuilt = false;
             _floorMode = 0;
@@ -535,7 +648,7 @@ namespace SkyLight.Controllers.Gameplay
             _ringPainted = false;
             _glowLinesCollected = false;
             _neonRenderersCollected = false;
-            _isFirstApply = false;
+            _latePassDone = false;
         }
 
         // 背景ドームの色（hex×brightness）。Alpha=1で不透明置き換え、Alpha<1で本物の半透明ブレンド。
@@ -545,55 +658,21 @@ namespace SkyLight.Controllers.Gameplay
 
         // ─── 適用 / 退避 / 復元 ────────────────────────────────────────────
 
-        // 毎フレーム呼ばれる軽い処理。Bloom ON のときだけ、ミラーが映すメインカメラ背景色を FloorColor に保つ。
-        // （clearFlags は変えない＝直接背景はそのまま＝白飛びしない。反射カメラが CopyFrom で引き継いで床に映す）
-        // メインカメラ背景はキャッシュ済みで「色が変わったときだけ代入」なので実質ゼロコスト。
-        // Bloom OFF（空ドーム）側のカメラ塗りつぶしは空ドームが背景を覆うので毎フレーム不要 → ApplyMode で1回行う。
-        private void ApplyCameraBackground()
-        {
-            bool bloomOn = IsBloomOn();
-            if (bloomOn && _config.PaintFloor && _config.ShowFloor && !_config.FloorDirectPaint)
-                SetGameplayCameraBackgroundColor(MakeColor(_config.FloorColor, _config.FloorBrightness, 1f, new Color(0.13f, 0.16f, 0.19f)));
-        }
-
-        // Camera.allCameras は呼ぶたびに配列を新規確保するため、毎フレーム呼ぶ SetGameplayCameraBackgroundColor
-        // 用に使い回すバッファ。GetAllCameras(バッファ) は非アロケーション。
-        private Camera[] _cameraBuffer = new Camera[8];
-
-        // 背景をクリアするゲームプレイ用カメラの backgroundColor を同期する（clearFlags は据え置き）。
-        // 録画/デスクトップ側のカメラもここへ含めることで、VR と同じ床反射色になるようにする。
-        private void SetGameplayCameraBackgroundColor(Color color)
-        {
-            int count = Camera.allCamerasCount;
-            if (_cameraBuffer.Length < count)
-                _cameraBuffer = new Camera[count];
-            int n = Camera.GetAllCameras(_cameraBuffer);
-
-            for (int i = 0; i < n; i++)
-            {
-                var cam = _cameraBuffer[i];
-                if (cam == null) continue;
-                if (cam.clearFlags != CameraClearFlags.Skybox && cam.clearFlags != CameraClearFlags.SolidColor)
-                    continue;
-
-                if (!_origCameras.ContainsKey(cam))
-                    _origCameras[cam] = (cam.clearFlags, cam.backgroundColor);
-
-                if (cam.backgroundColor != color)
-                    cam.backgroundColor = color;
-            }
-        }
-
         // 背景をクリアするカメラ(Skybox/SolidColor)の背景を空色で塗り、黒い虚無を消す。
         // 重ね描き用カメラ(Depth/Nothing)は触らない。
         private void FillCameraBackgrounds()
         {
             var bg = GetDomeColor();
+            bg.a = 0f; // アルファ 0＝全画面ブルームで光らせない（SkyBackdrop.DomeOutput と同じ理由）
 
             foreach (var cam in Camera.allCameras)
             {
                 if (cam == null) continue;
-                if (cam.clearFlags != CameraClearFlags.Skybox && cam.clearFlags != CameraClearFlags.SolidColor)
+                bool fillable = cam.clearFlags == CameraClearFlags.Skybox || cam.clearFlags == CameraClearFlags.SolidColor;
+                // 診断: 背景を塗れたカメラ／塗れなかったカメラ（1.44.1 で背景が黒い原因の確認用）。
+                Plugin.DebugInfo(() => $"[SkyLight][camfill] '{cam.name}' tag={cam.tag} clearFlags={cam.clearFlags} depth={cam.depth} " +
+                    $"targetTex={(cam.targetTexture != null)} stereo={cam.stereoTargetEye} filled={fillable}");
+                if (!fillable)
                     continue;
 
                 if (!_origCameras.ContainsKey(cam))

@@ -27,6 +27,10 @@
       <HintPath>$(BeatSaberManagedPath)\UnityEngine.CoreModule.dll</HintPath>
       <Private>False</Private>
     </Reference>
+    <Reference Include="UnityEngine.ScreenCaptureModule">
+      <HintPath>$(BeatSaberManagedPath)\UnityEngine.ScreenCaptureModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
     <Reference Include="UnityEngine.PhysicsModule">
       <HintPath>$(BeatSaberManagedPath)\UnityEngine.PhysicsModule.dll</HintPath>
       <Private>False</Private>

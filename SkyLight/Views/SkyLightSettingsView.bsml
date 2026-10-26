@@ -1,11 +1,9 @@
 <bg>
-  <settings-container child-control-width='true' child-expand-width='true' spacing='0' pad='0'>
+  <!-- タブで分ける（縦に長かったため）。各タブは中身をスクロールできる。 -->
+  <tab-selector tab-tag='skylight-tabs' anchor-min-x='0' anchor-max-x='1' anchor-min-y='1' anchor-max-y='1' size-delta-x='-4' size-delta-y='6' anchor-pos-y='-3' />
 
-    <!-- Header -->
-    <horizontal spacing='1' pad='0' pad-top='1'>
-      <text text='SkyLight' font-size='5' color='#FFFFFF' />
-    </horizontal>
-
+  <tab tags='skylight-tabs' tab-name='Main' anchor-min-x='0' anchor-max-x='1' anchor-min-y='0' anchor-max-y='1' size-delta-y='-8' anchor-pos-y='-4'>
+    <settings-container child-control-width='true' child-expand-width='true' spacing='0' pad='0'>
     <!-- MOD全体の有効/無効・共通設定 -->
     <toggle-setting text='Enabled'
                     value='enabled'
@@ -26,16 +24,16 @@
 
     <horizontal spacing='2' pad='0' pref-height='8' child-control-width='true' child-control-height='true' child-expand-width='true' child-expand-height='false'>
       <toggle-setting text='Sky Background' pref-width='52' value='recolor-background' apply-on-change='true' bind-value='true'
-                      hover-hint='Hide the dark game background and wrap the view in a sky-colored dome. Synced with the [Background] section below.' />
+                      hover-hint='Hide the dark game background and wrap the view in a sky-colored dome. Same as Show Sky Background in the Sky / Floor tab.' />
       <toggle-setting text='Floor' pref-width='52' value='show-floor' apply-on-change='true' bind-value='true'
-                      hover-hint='Show or hide the floor. Synced with the [Floor] section below.' />
+                      hover-hint='Show or hide the floor. Same as Show Floor in the Sky / Floor tab.' />
     </horizontal>
 
     <horizontal spacing='2' pad='0' pref-height='8' child-control-width='true' child-control-height='true' child-expand-width='true' child-expand-height='false'>
       <toggle-setting text='Structures' pref-width='52' value='show-structures' apply-on-change='true' bind-value='true'
-                      hover-hint='Show or hide matched structure objects. Synced with the [Structures] section below.' />
+                      hover-hint='Show or hide matched structure objects. Same as Show Structures in the Objects tab.' />
       <toggle-setting text='Ring' pref-width='52' value='show-ring' apply-on-change='true' bind-value='true'
-                      hover-hint='Show or hide matched ring objects. Synced with the [Ring] section below.' />
+                      hover-hint='Show or hide matched ring objects. Same as Show Ring in the Objects tab.' />
     </horizontal>
 
     <horizontal spacing='2' pad='0' pref-height='8' child-control-width='true' child-control-height='true' child-expand-width='true' child-expand-height='false'>
@@ -59,6 +57,12 @@
                       hover-hint='Show or hide misc environment objects (Window/Tunnel/Waterfall/Sun/Rain/Clouds/Smoke/Building/Mountain/Star etc.). Takes effect from the next song.' />
     </horizontal>
 
+    <horizontal spacing='2' pad='0' pref-height='8' child-control-width='true' child-control-height='true' child-expand-width='true' child-expand-height='false'>
+      <toggle-setting text='Custom BG' pref-width='52' value='show-custom-background' apply-on-change='true' bind-value='true'
+                      hover-hint='Show the CustomBackgrounds mod image during songs (independent of Neon). Takes effect from the next song.' />
+      <text text='' pref-width='52' />
+    </horizontal>
+
     <!-- ───────── Presets ───────── -->
     <horizontal spacing='1' pad='0' pad-top='1'>
       <text text='[Presets]' color='#FF8FB3' />
@@ -75,7 +79,7 @@
 
     <horizontal spacing='1' pad='0'>
       <button text='Load' on-click='load-preset'
-              hover-hint='Apply the selected preset to all settings below.' />
+              hover-hint='Apply the selected preset to all settings.' />
       <button text='Delete' on-click='delete-preset'
               hover-hint='Delete the selected preset file.' />
     </horizontal>
@@ -91,6 +95,14 @@
               hover-hint='Save the current settings as a preset with the name above.' />
     </horizontal>
 
+    <!-- ───────── Reset ───────── -->
+    <horizontal spacing='1' pad='0' pad-top='2'>
+      <button text='Reset to Defaults' on-click='reset-settings' />
+    </horizontal>
+    </settings-container>
+  </tab>
+  <tab tags='skylight-tabs' tab-name='Sky / Floor' anchor-min-x='0' anchor-max-x='1' anchor-min-y='0' anchor-max-y='1' size-delta-y='-8' anchor-pos-y='-4'>
+    <settings-container child-control-width='true' child-expand-width='true' spacing='0' pad='0'>
     <!-- ───────── Background (sky dome) ───────── -->
     <horizontal spacing='1' pad='0' pad-top='1'>
       <text text='[Background]' color='#FF8C00' />
@@ -146,6 +158,12 @@
             bind-value='true'
             hover-hint='Show or hide the floor itself.' />
 
+    <toggle-setting text='Mirror Reflection'
+        value='mirror-reflection'
+        apply-on-change='true'
+        bind-value='true'
+        hover-hint='When the game Mirror quality is ON, keep the reflective floor so it reflects the sky and notes (Floor Color is not used then). When Mirror is OFF, the floor is painted with Floor Color.' />
+
     <toggle-setting text='Floor Customize'
         value='paint-floor'
         apply-on-change='true'
@@ -171,13 +189,10 @@
                        bind-value='true'
                        min='0' max='1' increment='0.05'
                        hover-hint='Opacity of the floor. Lower = more see-through AND dimmer, so it glows less with Bloom ON.' />
-
-    <toggle-setting text='　Floor Direct Paint (no reflection)'
-                    value='floor-direct-paint'
-                    apply-on-change='true'
-                    bind-value='true'
-                    hover-hint='ON = stop using the reflective Mirror floor and paint it flat directly, even with Bloom ON. Use this if a custom background makes the reflected floor split into different colors.' />
-
+    </settings-container>
+  </tab>
+  <tab tags='skylight-tabs' tab-name='Objects' anchor-min-x='0' anchor-max-x='1' anchor-min-y='0' anchor-max-y='1' size-delta-y='-8' anchor-pos-y='-4'>
+    <settings-container child-control-width='true' child-expand-width='true' spacing='0' pad='0'>
     <!-- ───────── Structures ───────── -->
     <horizontal spacing='1' pad='0' pad-top='1'>
       <text text='[Structures]' color='#DDA0DD' />
@@ -263,7 +278,10 @@
                        bind-value='true'
                        min='0' max='1' increment='0.05'
                        hover-hint='Opacity of the rings. Lower = more see-through.' />
-
+    </settings-container>
+  </tab>
+  <tab tags='skylight-tabs' tab-name='Hide' anchor-min-x='0' anchor-max-x='1' anchor-min-y='0' anchor-max-y='1' size-delta-y='-8' anchor-pos-y='-4'>
+    <settings-container child-control-width='true' child-expand-width='true' spacing='0' pad='0'>
     <!-- ───────── Hide Objects ───────── -->
     <horizontal spacing='1' pad='0' pad-top='1'>
       <text text='[Hide Objects]' color='#FFD700' />
@@ -273,7 +291,7 @@
                     value='hide-object-hints'
                     apply-on-change='true'
                     bind-value='true'
-                    hover-hint='Hide objects whose name matches (partial match, separate with ;). Find names: turn on Dump Scene, play a song, then check the log section "Hide candidates". Takes effect from the next song.' />
+                    hover-hint='Hide objects whose name matches (partial match, separate with ;). Find names: turn on Dump Scene, play a song, then check the log section "Hide candidates". Takes effect from the next song. Per-environment lists: UserData/SkyLight/Environments/HideObjects.json (Hide field of each environment; Candidates lists the names found there).' />
 
     <string-setting text='　Exclude'
                     value='hide-object-exclude-hints'
@@ -281,16 +299,52 @@
                     bind-value='true'
                     hover-hint='Exceptions: objects matching these names stay visible even if they match Hide Objects.' />
 
+    <!-- ───────── Hide Objects per Environment ───────── -->
+    <horizontal spacing='1' pad='0' pad-top='1'>
+      <text text='[Hide Objects per Environment]' color='#FFD700' />
+    </horizontal>
+
+    <dropdown-list-setting text='Environment'
+                           id='env-dropdown'
+                           value='env-selected'
+                           options='env-options'
+                           apply-on-change='true'
+                           bind-value='true'
+                           on-change='select-env'
+                           hover-hint='Environment to edit. The list grows as you play new environments.' />
+
+    <horizontal spacing='1' pad='0'>
+      <button text='Last Played' on-click='env-last-played'
+              hover-hint='Select the environment you played last (and reload the list).' />
+    </horizontal>
+
+    <dropdown-list-setting text='　Object'
+                           id='env-object-dropdown'
+                           value='env-object-selected'
+                           options='env-object-options'
+                           apply-on-change='true'
+                           bind-value='true'
+                           on-change='select-env-object'
+                           hover-hint='Objects found in this environment. [Hidden] = currently hidden. Group names (e.g. Car4) hide all parts under them.' />
+
+    <horizontal spacing='1' pad='0'>
+      <button text='Hide' on-click='env-hide-object'
+              hover-hint='Hide the selected object in this environment (from the next song).' />
+      <button text='Show' on-click='env-show-object'
+              hover-hint='Stop hiding the selected object in this environment.' />
+    </horizontal>
+
+    <string-setting text='　Hide (this env)'
+                    value='env-hide'
+                    apply-on-change='true'
+                    bind-value='true'
+                    hover-hint='Names hidden in this environment (partial match on name or path, separate with ;). You can type your own, e.g. Car.' />
+
     <toggle-setting text='Dump Scene (log hide candidates)'
                     value='dump-scene'
                     apply-on-change='true'
                     bind-value='true'
                     hover-hint='Write scene diagnostics including the "Hide candidates" object list to the log at song start. Turn OFF when done.' />
-
-    <!-- ───────── Reset ───────── -->
-    <horizontal spacing='1' pad='0' pad-top='2'>
-      <button text='Reset to Defaults' on-click='reset-settings' />
-    </horizontal>
-
-  </settings-container>
+    </settings-container>
+  </tab>
 </bg>

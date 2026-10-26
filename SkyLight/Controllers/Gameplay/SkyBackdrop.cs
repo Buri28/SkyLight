@@ -5,15 +5,11 @@ using UnityEngine.Rendering;
 
 namespace SkyLight.Controllers.Gameplay
 {
-    // BS の背景クワッド(BloomSkyboxQuad)はブルームシステムから名前で直接参照され、専用パスで
-    // 描かれるため、色を塗ると必ず白飛びする。そこで:
-    //   (1) その背景クワッドを非表示にし、
-    //   (2) ブルームに一切関与しない「自前の空ドーム」を通常レイヤー(床と同じ)に新規生成してカメラに被せる。
-    // 自前ドームはブルームシステムに参照されない普通のジオメトリなので、明るい色でも白飛びしない。
-    //
-    // alpha<1 のときは上記の「不透明置き換え」ではなく、元の背景を隠さずに残したまま
-    // 本物の半透明ブレンド(SrcAlpha/OneMinusSrcAlpha, Transparentキュー)を重ねる「透過モード」になる。
-    // BloomSkyboxQuad 自体は塗らない別オブジェクトなので、Bloomの専用パスには引っかからない。
+    // 背景の空を自前の「空ドーム」（カメラに被せた巨大な立方体、layer 4）で描く。
+    //   不透明モード(alpha=1)：元の背景クワッド(BloomSkyboxQuad)を非表示にし、ドームを最背面に描く。
+    //   透過モード(alpha<1)：元の背景を残し、その上にドームを半透明で重ねる。
+    // 全画面ブルームは画面のアルファで光る量を決めるので、どちらのモードでも空の画素のアルファは 0 にする
+    // （不透明は色のアルファ 0、透過は直後のアルファ消しパス）。これで Bloom ON でも白飛びしない。
     //
     // ドームの半径(scale)は、床(TrackMirror)など奥行きのある実オブジェクトより必ず大きくすること。
     // 小さいと、それらの奥側だけドームの外＝元の(真っ黒な)背景が透けて2色に見える。
@@ -21,13 +17,18 @@ namespace SkyLight.Controllers.Gameplay
     {
         private GameObject? _dome;
         private Material? _mat;
+        // 半透明モード用：空の部分のアルファだけを 0 にする描画（色は変えない）。詳しくは EnsureAlphaClearMaterial。
+        private Material? _alphaClearMat;
         private readonly List<Renderer> _hidden = new(); // 非表示にした元の背景クワッド（不透明モードのみ使用）
         private Transform? _camT;
         private bool _logged;
         private bool _transparentMode; // alpha<1 のとき true。元背景を隠さず半透明ブレンドする。
+        private bool _reflectInMirror; // 床の反射にも空を映すか
+        private Color _color;          // 今の空の色（反射カメラ用に使う）
 
         // scan: ApplyMode 側で1回だけ取得した共有スキャン（背景クワッド探索用）。
-        public void Build(RendererScan scan, string hideHints, Color color, float scale)
+        // reflectInMirror=true：床の反射に空を映す（ドームを反射カメラが描くレイヤー 0 に置く）。
+        public void Build(RendererScan scan, string hideHints, Color color, float scale, bool reflectInMirror = false)
         {
             // 実描画している MainCamera を探してドームの親にする
             var cam = Camera.allCameras.FirstOrDefault(c =>
@@ -36,12 +37,12 @@ namespace SkyLight.Controllers.Gameplay
 
             _transparentMode = color.a < 0.999f;
 
-            // 不透明モードのみ: 元の背景クワッドを収集（毎フレーム非表示にする）。ドームが背景を置き換える。
+            // 不透明モードのみ: 元の背景クワッドを集めて非表示にする。ドームが背景を置き換える。
             // 透過モードでは元の背景を残し、その上に半透明の色を重ねるので隠さない。
             _hidden.Clear();
             if (!_transparentMode)
             {
-                var hints = hideHints.Split(';').Select(h => h.Trim()).Where(h => h.Length > 0).ToArray();
+                var hints = (hideHints ?? "").Split(';').Select(h => h.Trim()).Where(h => h.Length > 0).ToArray();
                 foreach (var e in scan.Entries)
                 {
                     if (e.Renderer != null &&
@@ -51,33 +52,57 @@ namespace SkyLight.Controllers.Gameplay
             }
 
             EnsureMaterial(color);
-            if (_transparentMode)
-            {
-                // 透過モードは実際に奥の景色とブレンドする必要があるので、立体のドームが要る。
-                EnsureDome(0, scale);
-            }
-            else if (_dome != null)
-            {
-                // 不透明モードはカメラの backgroundColor（Controller側の FillCameraBackgrounds）だけで
-                // 同じ見た目になるため、ドームの描画は不要。前回まで作っていたら片付ける。
-                Object.Destroy(_dome);
-                _dome = null;
-            }
+            // 不透明モードでもドームを描く。1.40.8 はカメラの backgroundColor（FillCameraBackgrounds）だけで
+            // 空が出たが、1.44.1 ではそれだけだと背景が黒いままだったため、カメラ設定に頼らないドームを使う。
+            EnsureDome(reflectInMirror ? ReflectedDomeLayer : DomeLayer, scale);
             Apply();
+
+            // 反射床に空を映すとき：反射カメラが描く間だけ、空をアルファ 1 で描き、背景色もアルファ 1 にする。
+            // （反射床はアルファ 0 の反射を黒く出す。画面側はアルファ 0 のままなので Bloom で白飛びしない）
+            if (reflectInMirror && !_reflectInMirror) Camera.onPreRender += OnCameraPreRender;
+            else if (!reflectInMirror && _reflectInMirror) Camera.onPreRender -= OnCameraPreRender;
+            _reflectInMirror = reflectInMirror;
 
             if (!_logged)
             {
+                // 診断: 元の背景クワッドの描画順（半透明モードでアルファを消す順番を決めるため）。
+                Plugin.DebugInfo(() => "[SkyLight][dome] background quads: " + string.Join(", ", scan.Entries
+                    .Where(e => e.Renderer != null && e.ShaderNames.Any(s => s.IndexOf("Skybox", System.StringComparison.OrdinalIgnoreCase) >= 0))
+                    .Select(e => $"{e.Path}<{string.Join("/", e.SharedMaterials.Where(m => m != null).Select(m => $"{m.shader.name} q={m.renderQueue}"))}> layer={e.Renderer.gameObject.layer} enabled={e.Renderer.enabled}")));
                 Plugin.DebugInfo(() => $"[SkyLight][dome] camera={(cam != null ? cam.name : "null")} hiddenQuads={_hidden.Count} scale={scale} transparentMode={_transparentMode} domeMesh={_dome != null}");
                 _logged = true;
             }
         }
 
-        public void SetColor(Color color)
+        // 反射カメラ（MirrorRendererSO が作る "MirrorCam<ID>"）が描く直前だけアルファ 1、それ以外のカメラはアルファ 0。
+        private void OnCameraPreRender(Camera cam)
         {
-            if (_mat != null) _mat.SetColor("_Color", color);
+            if (_mat == null || _transparentMode || cam == null) return;
+            bool mirror = cam.name.StartsWith("MirrorCam", System.StringComparison.Ordinal);
+            _mat.SetColor("_Color", mirror ? new Color(_color.r, _color.g, _color.b, 1f) : DomeOutput(_color));
+            if (mirror) cam.backgroundColor = new Color(_color.r, _color.g, _color.b, 1f);
         }
 
-        // 元クワッドが再表示されても毎フレーム消し、ドームのレイヤーも保つ。
+        public void SetColor(Color color)
+        {
+            _color = color;
+            if (_mat != null) _mat.SetColor("_Color", DomeOutput(color));
+        }
+
+        // ドームのレイヤー。床の反射カメラ(MirrorRendererSO)は cullingMask から layer 4 (Water) を必ず外す
+        // (-17 & ...) ので、ここに置くと反射に映らない（床に空の色が映り込まない）。
+        // layer 0 だと反射にもドームが映り、床が空と同じ色になっていた（1.44.1 自動テストで確認）。
+        private const int DomeLayer = 4;
+        // 反射床に空を映すとき用（反射カメラの cullingMask に入るレイヤー）。
+        private const int ReflectedDomeLayer = 0;
+
+        // 不透明モードではアルファを 0 で書く。全画面ブルーム(PyramidBloomMainEffectSO)は
+        // 画面のアルファで光らせる量を決める(Prefilter4, _alphaWeights=4)ため、アルファ 1 の背景は全面が光って白飛びする。
+        // 不透明モードはブレンド One/Zero なので、アルファを 0 にしても色(RGB)はそのまま出る。
+        private Color DomeOutput(Color color)
+            => _transparentMode ? color : new Color(color.r, color.g, color.b, 0f);
+
+        // 2回目の塗り（3フレーム後）で、元クワッドが再表示されていたら消し直す。
         public void Reassert()
         {
             Apply();
@@ -89,8 +114,10 @@ namespace SkyLight.Controllers.Gameplay
                 if (r != null) r.enabled = true; // 元に戻す（シーン破棄前提だが念のため）
             _hidden.Clear();
 
+            if (_reflectInMirror) { Camera.onPreRender -= OnCameraPreRender; _reflectInMirror = false; }
             if (_dome != null) { Object.Destroy(_dome); _dome = null; }
             if (_mat != null) { Object.Destroy(_mat); _mat = null; }
+            if (_alphaClearMat != null) { Object.Destroy(_alphaClearMat); _alphaClearMat = null; }
             _camT = null;
         }
 
@@ -102,7 +129,8 @@ namespace SkyLight.Controllers.Gameplay
 
         private void EnsureMaterial(Color color)
         {
-            if (_mat != null) { _mat.SetColor("_Color", color); return; }
+            _color = color;
+            if (_mat != null) { _mat.SetColor("_Color", DomeOutput(color)); return; }
 
             var shader = Shader.Find("Hidden/Internal-Colored");
             if (shader == null)
@@ -111,8 +139,8 @@ namespace SkyLight.Controllers.Gameplay
                 return;
             }
             _mat = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };
-            _mat.SetColor("_Color", color);
-            _mat.SetInt("_Cull", (int)CullMode.Front); // 内側から見るので前面カリング
+            _mat.SetColor("_Color", DomeOutput(color));
+            _mat.SetInt("_Cull", (int)CullMode.Off); // 内側から見る。反射カメラは裏表が反転するので両面描く
             _mat.SetInt("_ZWrite", 0);                  // 奥のジオメトリを塞がない
 
             if (_transparentMode)
@@ -121,7 +149,8 @@ namespace SkyLight.Controllers.Gameplay
                 _mat.SetInt("_SrcBlend", (int)BlendMode.SrcAlpha);
                 _mat.SetInt("_DstBlend", (int)BlendMode.OneMinusSrcAlpha);
                 _mat.SetInt("_ZTest", (int)CompareFunction.LessEqual); // 通常の深度テスト（手前の物に隠れる）
-                _mat.renderQueue = (int)RenderQueue.Transparent;        // 不透明物の後に描く
+                _mat.renderQueue = (int)RenderQueue.Transparent - 2;    // 不透明物の後、半透明物の前に描く（直後にアルファを消す）
+                EnsureAlphaClearMaterial(shader);
             }
             else
             {
@@ -130,6 +159,26 @@ namespace SkyLight.Controllers.Gameplay
                 _mat.SetInt("_ZTest", (int)CompareFunction.Always); // 常に最背面に描く（他を遮らない）
                 _mat.renderQueue = (int)RenderQueue.Background;      // 最初に描く＝最背面
             }
+        }
+
+        // 半透明モードの色ドームは SrcAlpha ブレンドなので、空の画素にアルファ（Alpha=0.2 なら 0.2×0.2=0.04 以上）が残り、
+        // Bloom ON で少し光る（1.40.8 Alpha=0.2 の実測：Bloom ON #455286 / OFF #3F4B7C）。
+        // そこで色ドームの直後に、同じ形を Blend DstColor Zero・色 (1,1,1,0) で描く：
+        //   RGB = 1 × 画面の色 = そのまま、アルファ = 0 × 画面のアルファ = 0。
+        // 深度テストありなので、手前の物（ノーツ・構造物など）がある画素は触らない＝空の画素だけ光らなくなる。
+        // キューは 色ドーム(Transparent-2) → これ(Transparent-1) → レーザーなど半透明物(Transparent)。
+        // 半透明物より前に描くので、それらの光り方は変えない。
+        private void EnsureAlphaClearMaterial(Shader shader)
+        {
+            if (_alphaClearMat != null) return;
+            _alphaClearMat = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };
+            _alphaClearMat.SetColor("_Color", new Color(1f, 1f, 1f, 0f));
+            _alphaClearMat.SetInt("_SrcBlend", (int)BlendMode.DstColor);
+            _alphaClearMat.SetInt("_DstBlend", (int)BlendMode.Zero);
+            _alphaClearMat.SetInt("_Cull", (int)CullMode.Front);
+            _alphaClearMat.SetInt("_ZWrite", 0);
+            _alphaClearMat.SetInt("_ZTest", (int)CompareFunction.LessEqual);
+            _alphaClearMat.renderQueue = (int)RenderQueue.Transparent - 1;
         }
 
         private void EnsureDome(int layer, float scale)
@@ -145,7 +194,8 @@ namespace SkyLight.Controllers.Gameplay
                 var col = _dome.GetComponent<Collider>();
                 if (col != null) Object.Destroy(col);
                 var mr = _dome.GetComponent<MeshRenderer>();
-                mr.sharedMaterial = _mat;
+                // 半透明モードは「アルファを消す描画」と「色の描画」の2つ。メッシュが1つでも材質を2つ並べると同じ形を2回描く。
+                mr.sharedMaterials = _alphaClearMat != null ? new[] { _alphaClearMat, _mat } : new[] { _mat };
                 mr.shadowCastingMode = ShadowCastingMode.Off;
                 mr.receiveShadows = false;
                 mr.lightProbeUsage = LightProbeUsage.Off;

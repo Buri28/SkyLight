@@ -18,6 +18,9 @@ namespace SkyLight.Installers
 
         public override void InstallBindings()
         {
+            // 自動テスト（--skylight-autotest のときだけ動く）。SkyLight が無効でも撮影はする。
+            Container.BindInterfacesTo<AutoTest.AutoTestCapture>().AsSingle().NonLazy();
+
             if (!_config.Enabled) return;
 
             Container.BindInstance(_config).AsSingle();

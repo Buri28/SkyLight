@@ -132,13 +132,6 @@ namespace SkyLight.Controllers.Settings
             set { _config.FloorAlpha = value; _config.Changed(); }
         }
 
-        [UIValue("floor-direct-paint")]
-        public bool FloorDirectPaint
-        {
-            get => _config.FloorDirectPaint;
-            set { _config.FloorDirectPaint = value; _config.Changed(); }
-        }
-
         [UIValue("paint-structures")]
         public bool PaintStructures
         {
@@ -201,6 +194,20 @@ namespace SkyLight.Controllers.Settings
         {
             get => !_config.HideNeon;
             set { _config.HideNeon = !value; _config.Changed(); }
+        }
+
+        [UIValue("mirror-reflection")]
+        public bool MirrorReflection
+        {
+            get => _config.MirrorReflection;
+            set { _config.MirrorReflection = value; _config.Changed(); }
+        }
+
+        [UIValue("show-custom-background")]
+        public bool ShowCustomBackground
+        {
+            get => _config.ShowCustomBackground;
+            set { _config.ShowCustomBackground = value; _config.Changed(); }
         }
 
         // ─── 任意オブジェクト非表示 ─────────────────────────────
@@ -279,8 +286,12 @@ namespace SkyLight.Controllers.Settings
             _config.RecolorBackground = d.RecolorBackground;
             _config.BackgroundColor = d.BackgroundColor;
             _config.BackgroundBrightness = d.BackgroundBrightness;
+            _config.BackgroundAlpha = d.BackgroundAlpha;
+            _config.AllowBloomWithBackground = d.AllowBloomWithBackground;
             _config.Bloom = d.Bloom;
             _config.HideNeon = d.HideNeon;
+            _config.ShowCustomBackground = d.ShowCustomBackground;
+            _config.MirrorReflection = d.MirrorReflection;
             _config.ShowFloor = d.ShowFloor;
             _config.ShowSideLanes = d.ShowSideLanes;
             _config.ShowLights = d.ShowLights;
@@ -290,7 +301,6 @@ namespace SkyLight.Controllers.Settings
             _config.FloorColor = d.FloorColor;
             _config.FloorBrightness = d.FloorBrightness;
             _config.FloorAlpha = d.FloorAlpha;
-            _config.FloorDirectPaint = d.FloorDirectPaint;
             _config.ShowStructures = d.ShowStructures;
             _config.PaintStructures = d.PaintStructures;
             _config.StructureColorize = d.StructureColorize;
@@ -319,8 +329,12 @@ namespace SkyLight.Controllers.Settings
             NotifyPropertyChanged(nameof(RecolorBackground));
             NotifyPropertyChanged(nameof(BackgroundColor));
             NotifyPropertyChanged(nameof(BackgroundBrightness));
+            NotifyPropertyChanged(nameof(BackgroundAlpha));
+            NotifyPropertyChanged(nameof(AllowBloomWithBackground));
             NotifyPropertyChanged(nameof(Bloom));
             NotifyPropertyChanged(nameof(ShowNeon));
+            NotifyPropertyChanged(nameof(ShowCustomBackground));
+            NotifyPropertyChanged(nameof(MirrorReflection));
             NotifyPropertyChanged(nameof(ShowFloor));
             NotifyPropertyChanged(nameof(ShowSideLanes));
             NotifyPropertyChanged(nameof(ShowLights));
@@ -330,7 +344,6 @@ namespace SkyLight.Controllers.Settings
             NotifyPropertyChanged(nameof(FloorColor));
             NotifyPropertyChanged(nameof(FloorBrightness));
             NotifyPropertyChanged(nameof(FloorAlpha));
-            NotifyPropertyChanged(nameof(FloorDirectPaint));
             NotifyPropertyChanged(nameof(ShowStructures));
             NotifyPropertyChanged(nameof(PaintStructures));
             NotifyPropertyChanged(nameof(StructureColorize));
@@ -369,8 +382,13 @@ namespace SkyLight.Controllers.Settings
         public string PresetName { get; set; } = "";
 
         // 画面構築後にドロップダウンの選択肢を実ファイルから組み立てる。
+        // BSML は同じ名前の UIAction を1つしか持てないので、画面の初期化はここにまとめる。
         [UIAction("#post-parse")]
-        private void PostParse() => RebuildPresetOptions(PresetSelected);
+        private void PostParse()
+        {
+            RebuildPresetOptions(PresetSelected);
+            RebuildEnvOptions(EnvironmentHideList.LastPlayed);
+        }
 
         // 保存済みファイルから選択肢を作り直し、ドロップダウンへ反映する。
         private void RebuildPresetOptions(string? select)
@@ -440,5 +458,144 @@ namespace SkyLight.Controllers.Settings
             NotifyPropertyChanged(nameof(PresetOptions));
             NotifyPropertyChanged(nameof(PresetSelected));
         }
+
+        // ───── Hide Objects per Environment ───────────────────────
+        // 環境ごとの非表示リスト（UserData/SkyLight/Environments/HideObjects.json）を画面から編集する。
+        // ドロップダウンの表示は環境の表示名（例 Interscope）、候補は非表示中なら先頭に HiddenMark を付ける。
+        private const string NoEnv = "—";
+        private const string HiddenMark = "[Hidden] ";
+        private readonly List<string> _envKeys = new List<string>(); // EnvOptions と同じ順の serializedName
+
+        [UIComponent("env-dropdown")]
+        private DropDownListSetting _envDropdown = null!;
+
+        [UIComponent("env-object-dropdown")]
+        private DropDownListSetting _envObjectDropdown = null!;
+
+        [UIValue("env-options")]
+        public List<object> EnvOptions { get; private set; } = new List<object> { NoEnv };
+
+        [UIValue("env-selected")]
+        public string EnvSelected { get; set; } = NoEnv;
+
+        [UIValue("env-object-options")]
+        public List<object> EnvObjectOptions { get; private set; } = new List<object> { NoEnv };
+
+        [UIValue("env-object-selected")]
+        public string EnvObjectSelected { get; set; } = NoEnv;
+
+        // 選んでいる環境の Hide（; 区切り）。直接書き換えると保存する。
+        [UIValue("env-hide")]
+        public string EnvHide
+        {
+            get => SelectedEnvKey is string key ? EnvironmentHideList.GetHideHints(key) : "";
+            set
+            {
+                if (!(SelectedEnvKey is string key)) return;
+                EnvironmentHideList.SetHideHints(key, NormalizeHints(value));
+                RebuildEnvObjectOptions();
+            }
+        }
+
+        private string? SelectedEnvKey
+        {
+            get
+            {
+                int i = EnvOptions.IndexOf(EnvSelected);
+                return i >= 0 && i < _envKeys.Count ? _envKeys[i] : null;
+            }
+        }
+
+        // 環境の一覧を作り直す。selectKey があればそれを選ぶ（無ければ今の選択を保つ）。
+        private void RebuildEnvOptions(string? selectKey)
+        {
+            var envs = EnvironmentHideList.ListEnvironments();
+            _envKeys.Clear();
+            var options = new List<object>();
+            foreach (var (key, name) in envs)
+            {
+                _envKeys.Add(key);
+                options.Add(string.IsNullOrEmpty(name) || options.Contains(name) ? key : name); // 表示名（重なったら serializedName）
+            }
+            if (options.Count == 0) options.Add(NoEnv);
+            EnvOptions = options;
+
+            int idx = string.IsNullOrEmpty(selectKey) ? -1 : _envKeys.IndexOf(selectKey!);
+            if (idx >= 0) EnvSelected = (string)EnvOptions[idx];
+            else if (!EnvOptions.Contains(EnvSelected)) EnvSelected = (string)EnvOptions[0];
+
+            if (_envDropdown != null)
+            {
+                _envDropdown.Values = EnvOptions;
+                _envDropdown.Value = EnvSelected;
+                _envDropdown.UpdateChoices();
+                _envDropdown.ReceiveValue();
+            }
+            RebuildEnvObjectOptions();
+        }
+
+        // 選んでいる環境の候補を作り直す（非表示中のものに印を付ける）。
+        private void RebuildEnvObjectOptions()
+        {
+            var key = SelectedEnvKey;
+            var hidden = SplitHints(key != null ? EnvironmentHideList.GetHideHints(key) : "");
+            var plainSelected = StripMark(EnvObjectSelected);
+
+            var options = new List<object>();
+            if (key != null)
+                foreach (var c in EnvironmentHideList.GetCandidates(key))
+                    options.Add(hidden.Contains(c, System.StringComparer.OrdinalIgnoreCase) ? HiddenMark + c : c);
+            if (options.Count == 0) options.Add(NoEnv);
+            EnvObjectOptions = options;
+
+            EnvObjectSelected = options.Cast<string>().FirstOrDefault(o => StripMark(o) == plainSelected) ?? (string)options[0];
+            if (_envObjectDropdown != null)
+            {
+                _envObjectDropdown.Values = EnvObjectOptions;
+                _envObjectDropdown.Value = EnvObjectSelected;
+                _envObjectDropdown.UpdateChoices();
+                _envObjectDropdown.ReceiveValue();
+            }
+            NotifyPropertyChanged(nameof(EnvHide));
+        }
+
+        [UIAction("select-env")]
+        private void SelectEnv(string value)
+        {
+            EnvSelected = value;
+            RebuildEnvObjectOptions();
+        }
+
+        [UIAction("select-env-object")]
+        private void SelectEnvObject(string value) => EnvObjectSelected = value;
+
+        [UIAction("env-last-played")]
+        private void SelectLastPlayed() => RebuildEnvOptions(EnvironmentHideList.LastPlayed);
+
+        [UIAction("env-hide-object")]
+        private void HideSelectedObject() => ChangeSelectedObject(hide: true);
+
+        [UIAction("env-show-object")]
+        private void ShowSelectedObject() => ChangeSelectedObject(hide: false);
+
+        private void ChangeSelectedObject(bool hide)
+        {
+            var key = SelectedEnvKey;
+            var name = StripMark(EnvObjectSelected);
+            if (key == null || name == NoEnv || name.Length == 0) return;
+
+            var list = SplitHints(EnvironmentHideList.GetHideHints(key));
+            list.RemoveAll(h => string.Equals(h, name, System.StringComparison.OrdinalIgnoreCase));
+            if (hide) list.Add(name);
+            EnvironmentHideList.SetHideHints(key, string.Join(";", list));
+            RebuildEnvObjectOptions();
+        }
+
+        private static string StripMark(string s) => s.StartsWith(HiddenMark) ? s.Substring(HiddenMark.Length) : s;
+
+        private static List<string> SplitHints(string s)
+            => (s ?? "").Split(';').Select(x => x.Trim()).Where(x => x.Length > 0).ToList();
+
+        private static string NormalizeHints(string s) => string.Join(";", SplitHints(s));
     }
 }
