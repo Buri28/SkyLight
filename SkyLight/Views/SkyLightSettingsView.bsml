@@ -15,7 +15,7 @@
                     value='bloom'
                     apply-on-change='true'
                     bind-value='true'
-                    hover-hint='Full-screen Bloom ON/OFF. ON = notes/lasers glow. Sky Background uses the non-bloom background path.' />
+                    hover-hint='Full-screen Bloom ON/OFF. ON = notes/lasers glow. Works with Sky Background too.' />
 
     <!-- ───────── Show / Hide（表示/非表示のまとめ。2列で省スペース） ───────── -->
     <horizontal spacing='1' pad='0' pad-top='1'>
@@ -112,20 +112,7 @@
                     value='recolor-background'
                     apply-on-change='true'
                     bind-value='true'
-                    hover-hint='Hide the dark game background and wrap the view in a solid sky-colored dome. This uses the non-bloom background path.' />
-
-    <toggle-setting text='Allow Bloom with Sky Background'
-                    value='allow-bloom-with-background'
-                    apply-on-change='true'
-                    bind-value='true'
-                    hover-hint='Keep full-screen Bloom ON even while Sky Background is shown. Combine with Background Alpha below 1 to test the translucent overlay mode without whiteout.' />
-
-    <horizontal spacing='1' pad='0'>
-      <text text='Sky Background forces background Bloom OFF unless Allow Bloom is ON.'
-            color='#FF5A5A'
-          italics='true'
-            font-size='3' />
-    </horizontal>
+                    hover-hint='Hide the dark game background and wrap the view in a solid sky-colored dome.' />
 
     <color-setting text='Background Color'
                    value='background-color'

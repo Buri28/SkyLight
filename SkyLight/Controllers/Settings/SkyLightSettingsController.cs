@@ -40,13 +40,6 @@ namespace SkyLight.Controllers.Settings
             set { _config.RecolorBackground = value; _config.Changed(); NotifyPropertyChanged(); }
         }
 
-        [UIValue("allow-bloom-with-background")]
-        public bool AllowBloomWithBackground
-        {
-            get => _config.AllowBloomWithBackground;
-            set { _config.AllowBloomWithBackground = value; _config.Changed(); }
-        }
-
         [UIValue("background-color")]
         public Color BackgroundColor
         {
@@ -275,7 +268,6 @@ namespace SkyLight.Controllers.Settings
             _config.BackgroundColor = d.BackgroundColor;
             _config.BackgroundBrightness = d.BackgroundBrightness;
             _config.BackgroundAlpha = d.BackgroundAlpha;
-            _config.AllowBloomWithBackground = d.AllowBloomWithBackground;
             _config.Bloom = d.Bloom;
             _config.HideNeon = d.HideNeon;
             _config.ShowCustomBackground = d.ShowCustomBackground;
@@ -318,7 +310,6 @@ namespace SkyLight.Controllers.Settings
             NotifyPropertyChanged(nameof(BackgroundColor));
             NotifyPropertyChanged(nameof(BackgroundBrightness));
             NotifyPropertyChanged(nameof(BackgroundAlpha));
-            NotifyPropertyChanged(nameof(AllowBloomWithBackground));
             NotifyPropertyChanged(nameof(Bloom));
             NotifyPropertyChanged(nameof(ShowNeon));
             NotifyPropertyChanged(nameof(ShowCustomBackground));

@@ -38,7 +38,7 @@ namespace SkyLight.AutoTest
                 var path = Path.Combine(AutoTestOptions.OutputDir, $"shot-{i}.png");
                 yield return new WaitForEndOfFrame();
                 ScreenCapture.CaptureScreenshot(path);
-                AutoTestOptions.Status($"SHOT {path} ({Screen.width}x{Screen.height})");
+                AutoTestOptions.Status($"SHOT {path} ({Screen.width}x{Screen.height}) {BloomState()}");
                 if (i < AutoTestOptions.Shots)
                     yield return new WaitForSeconds(AutoTestOptions.Interval);
             }
@@ -48,6 +48,22 @@ namespace SkyLight.AutoTest
             AutoTestOptions.Status("DONE");
             if (AutoTestOptions.Quit)
                 Application.Quit();
+        }
+
+        // 撮影した瞬間に全画面ブルームが本当に効いているか（設定値ではなく実物の enabled）を書く。
+        // 設定の Bloom が ON でも MOD 側で止めていた、という見落としを防ぐため。
+        private static string BloomState()
+        {
+            var sb = new System.Text.StringBuilder("bloom:");
+            int n = 0;
+            foreach (var b in Resources.FindObjectsOfTypeAll<Behaviour>())
+            {
+                if (b == null || b.GetType().Name != "MainEffectController" || !b.gameObject.scene.IsValid()) continue;
+                sb.Append($" {b.gameObject.name}={(b.isActiveAndEnabled ? "ON" : "OFF")}");
+                n++;
+            }
+            if (n == 0) sb.Append(" none");
+            return sb.ToString();
         }
     }
 }

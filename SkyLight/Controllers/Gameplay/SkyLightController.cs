@@ -73,10 +73,8 @@ namespace SkyLight.Controllers.Gameplay
             _config = config;
         }
 
-        // Bloom を実際に有効扱いするかどうか。RecolorBackground(背景壁)使用中は原則Bloomを強制OFFにするが、
-        // AllowBloomWithBackground=true なら維持する（BackgroundAlpha<1の透過モードと併用する想定）。
-        private bool IsBloomOn()
-            => _config.Bloom && (!_config.RecolorBackground || _config.AllowBloomWithBackground);
+        // Bloom は設定の Bloom トグルだけで決める。空・床はアルファ 0 で描くので、Sky Background 中でも白飛びしない。
+        private bool IsBloomOn() => _config.Bloom;
 
         // プレイ画面（GameCore シーン）がロードされているかどうか。
         // メニュー等でこの MOD が動作しないようにするガード条件。
