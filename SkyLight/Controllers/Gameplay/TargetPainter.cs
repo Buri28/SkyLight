@@ -160,6 +160,9 @@ namespace SkyLight.Controllers.Gameplay
         }
 
         // 1つのレンダラーを非表示にする（元の enabled を記録し、ネオンの発光も止める）。
+        // このペインターが今そのレンダラーを非表示にしているか（設定画面の一覧に「何で消えたか」を出すため）。
+        public bool IsHiding(Renderer r) => _hiding && r != null && _hiddenIds.Contains(r.GetInstanceID());
+
         private void HideOne(Renderer r)
         {
             if (r == null) return;

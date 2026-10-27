@@ -112,6 +112,39 @@ namespace SkyLight.Controllers
 
         // 現在ロード中の環境シーン名（例: 'BTSEnvironment'）。環境ごとにオブジェクト名が違うため、
         // どの環境でのダンプかをヘッダーに残す。見つからなければアクティブシーン名を返す。
+        // 診断: 指定シェーダー名を含むレンダラーの、シェーダーの色・数値プロパティと、MaterialPropertyBlock で上書きされている値。
+        // （バー＝Custom/Spectrogram の色を変えられるか調べるため）
+        public static void DumpShaderProperties(string shaderHint)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"[SkyLight][diag] === Shader properties ('{shaderHint}') ===");
+            var block = new MaterialPropertyBlock();
+            foreach (var r in Object.FindObjectsOfType<Renderer>())
+            {
+                var m = r.sharedMaterial;
+                if (m == null || m.shader == null || m.shader.name.IndexOf(shaderHint, System.StringComparison.OrdinalIgnoreCase) < 0) continue;
+                r.GetPropertyBlock(block);
+                sb.AppendLine($"  '{GetPath(r.transform)}' shader={m.shader.name} mat={m.name} hasBlock={!block.isEmpty} keywords=[{string.Join(",", m.shaderKeywords)}]");
+                for (int i = 0; i < m.shader.GetPropertyCount(); i++)
+                {
+                    var n = m.shader.GetPropertyName(i);
+                    var t = m.shader.GetPropertyType(i);
+                    string val = t switch
+                    {
+                        UnityEngine.Rendering.ShaderPropertyType.Color => m.GetColor(n).ToString(),
+                        UnityEngine.Rendering.ShaderPropertyType.Vector => m.GetVector(n).ToString(),
+                        UnityEngine.Rendering.ShaderPropertyType.Float or UnityEngine.Rendering.ShaderPropertyType.Range => m.GetFloat(n).ToString("0.###"),
+                        _ => t.ToString(),
+                    };
+                    string inBlock = (t == UnityEngine.Rendering.ShaderPropertyType.Color || t == UnityEngine.Rendering.ShaderPropertyType.Vector) && block.HasVector(n)
+                        ? $" block={block.GetVector(n)}" : (block.HasFloat(n) ? $" block={block.GetFloat(n):0.###}" : "");
+                    sb.AppendLine($"    {n} ({t}) = {val}{inBlock}");
+                }
+                break; // 1つで十分
+            }
+            Plugin.Log.Info(sb.ToString());
+        }
+
         internal static string GetEnvironmentName()
         {
             for (int i = 0; i < UnityEngine.SceneManagement.SceneManager.sceneCount; i++)

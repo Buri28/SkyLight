@@ -13,9 +13,10 @@ namespace SkyLight.Configuration
     /// 形式（環境の serializedName ごと）:
     ///   "DefaultEnvironment": {
     ///     "Hide": "BackColumns;RectangleFakeGlow",   // 非表示にする名前（; 区切り、部分一致）。既定は空＝何も隠さない
-    ///     "Candidates": [ "BackColumns", ... ]         // その環境で見つかったオブジェクト名（選ぶときの参考）
+    ///     "Candidates": [ "BackColumns", ... ],        // その環境で見つかったオブジェクト名（選ぶときの参考）
+    ///     "HiddenBy": { "BackColumns": "Structures" }  // 前回遊んだときに SkyLight の設定で消えていた物（一部だけなら "Part:…"）
     ///   }
-    /// まだ載っていない環境で遊ぶと、その環境の Candidates を自動で書き足す（Hide は空のまま）。
+    /// 遊ぶたびに、その環境の Candidates を書き足し、HiddenBy を書き直す（Hide は触らない）。
     /// 非表示は Renderer を止めるだけで、オブジェクトは削除しない（曲が終わると元に戻る）。
     /// プリセット（UserData/SkyLight/*.json）と混ざらないよう、サブフォルダに置く。
     /// </summary>
@@ -93,26 +94,54 @@ namespace SkyLight.Configuration
             }
         }
 
-        // その環境がまだファイルに無ければ、候補名を付けて書き足す（既にあれば何もしない＝ユーザーの編集を壊さない）。
-        public static void AddEnvironmentIfMissing(string environment, IEnumerable<string> candidateNames)
+        // 候補に載せる名前。"Fence (12)" のような番号違いは "Fence" にまとめる（Hide は部分一致なので "Fence" で全部に当たる）。
+        public static string CandidateName(string name)
+            => System.Text.RegularExpressions.Regex.Replace(name ?? "", @" \(\d+\)$", "");
+
+        // 設定画面用：前回遊んだときに SkyLight の設定で消えていた物（名前 → "Structures" / "Part:Structures" など）。
+        public static Dictionary<string, string> GetHiddenBy(string environment)
+        {
+            var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                if (Load()?[environment]?["HiddenBy"] is JObject o)
+                    foreach (var p in o.Properties())
+                        result[p.Name] = p.Value.Value<string>() ?? "";
+            }
+            catch { }
+            return result;
+        }
+
+        // 遊ぶたびに呼ぶ。候補名を書き足し（今ある候補・Hide は消さない）、HiddenBy を今回の状態で置き換える。
+        // 中身が変わらなければ書かない。
+        public static void RecordPlayState(string environment, IEnumerable<string> candidateNames, IDictionary<string, string> hiddenBy)
         {
             if (string.IsNullOrEmpty(environment)) return;
             try
             {
                 var root = Load() ?? new JObject();
-                if (root[environment] != null) return;
+                bool isNew = !(root[environment] is JObject);
+                var entry = root[environment] as JObject ?? new JObject { ["Hide"] = "" };
 
-                root[environment] = new JObject
-                {
-                    ["Hide"] = "",
-                    // "Fence (12)" のような番号違いは "Fence" にまとめる（Hide は部分一致なので "Fence" で全部に当たる）。
-                    ["Candidates"] = new JArray(candidateNames.Select(n => System.Text.RegularExpressions.Regex.Replace(n, @" \(\d+\)$", ""))
-                                                              .Distinct(StringComparer.Ordinal)
-                                                              .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)),
-                };
+                var names = new HashSet<string>(StringComparer.Ordinal);
+                if (entry["Candidates"] is JArray old)
+                    foreach (var t in old) { var s = t.Value<string>(); if (!string.IsNullOrEmpty(s)) names.Add(s!); }
+                foreach (var n in candidateNames) if (!string.IsNullOrEmpty(n)) names.Add(n);
+                var candidates = new JArray(names.OrderBy(n => n, StringComparer.OrdinalIgnoreCase));
+
+                var hidden = new JObject();
+                foreach (var kv in hiddenBy.OrderBy(k => k.Key, StringComparer.OrdinalIgnoreCase))
+                    hidden[kv.Key] = kv.Value;
+
+                if (!isNew && JToken.DeepEquals(entry["Candidates"], candidates) && JToken.DeepEquals(entry["HiddenBy"], hidden))
+                    return;
+
+                entry["Candidates"] = candidates;
+                entry["HiddenBy"] = hidden;
+                root[environment] = entry;
                 Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
                 File.WriteAllText(FilePath, root.ToString(Formatting.Indented));
-                Plugin.Log.Info($"[SkyLight] Added '{environment}' to {FilePath}");
+                if (isNew) Plugin.Log.Info($"[SkyLight] Added '{environment}' to {FilePath}");
             }
             catch (Exception ex)
             {

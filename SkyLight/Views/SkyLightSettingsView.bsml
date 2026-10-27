@@ -282,22 +282,7 @@
   </tab>
   <tab tags='skylight-tabs' tab-name='Hide' anchor-min-x='0' anchor-max-x='1' anchor-min-y='0' anchor-max-y='1' size-delta-y='-8' anchor-pos-y='-4'>
     <settings-container child-control-width='true' child-expand-width='true' spacing='0' pad='0'>
-    <!-- ───────── Hide Objects ───────── -->
-    <horizontal spacing='1' pad='0' pad-top='1'>
-      <text text='[Hide Objects]' color='#FFD700' />
-    </horizontal>
-
-    <string-setting text='Hide Objects'
-                    value='hide-object-hints'
-                    apply-on-change='true'
-                    bind-value='true'
-                    hover-hint='Hide objects whose name matches (partial match, separate with ;). Find names: turn on Dump Scene, play a song, then check the log section "Hide candidates". Takes effect from the next song. Per-environment lists: UserData/SkyLight/Environments/HideObjects.json (Hide field of each environment; Candidates lists the names found there).' />
-
-    <string-setting text='　Exclude'
-                    value='hide-object-exclude-hints'
-                    apply-on-change='true'
-                    bind-value='true'
-                    hover-hint='Exceptions: objects matching these names stay visible even if they match Hide Objects.' />
+    <!-- 全環境共通の Hide Objects / Exclude は画面に出さない（SkyLight.json の HideObjectHints / HideObjectExcludeHints で設定できる） -->
 
     <!-- ───────── Hide Objects per Environment ───────── -->
     <horizontal spacing='1' pad='0' pad-top='1'>
@@ -325,7 +310,7 @@
                            apply-on-change='true'
                            bind-value='true'
                            on-change='select-env-object'
-                           hover-hint='Objects found in this environment. [Hidden] = currently hidden. Group names (e.g. Car4) hide all parts under them.' />
+                           hover-hint='Objects found in this environment. [Hidden] = hidden here. [Main] = hidden by SkyLight settings (e.g. Ring OFF) last time you played. [Part] = partly hidden. No mark = visible. Main/Part update when you play this environment again. Group names (e.g. Car4) hide all parts under them.' />
 
     <horizontal spacing='1' pad='0'>
       <button text='Hide' on-click='env-hide-object'

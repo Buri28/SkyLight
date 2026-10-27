@@ -202,6 +202,11 @@ namespace SkyLight.Controllers.Gameplay
                 {
                     try { SceneDiagnostics.Dump(); }
                     catch (Exception ex) { Plugin.Log.Warn($"[SkyLight] Scene dump (ApplyMode) failed: {ex.Message}"); }
+                    if (IsLatePass)
+                    {
+                        try { SceneDiagnostics.DumpShaderProperties("Spectrogram"); }
+                        catch (Exception ex) { Plugin.Log.Warn($"[SkyLight] Shader property dump failed: {ex.Message}"); }
+                    }
                 }
             }
 
@@ -310,15 +315,6 @@ namespace SkyLight.Controllers.Gameplay
         {
             var hints = MergeHints(_config.HideObjectHints, _envHideHints.Split(';'));
 
-            // まだファイルに無い環境なら、選ぶときの参考に候補名を書き足す（2回目＝リング等も出揃った時点で1回だけ）。
-            if (IsLatePass && _environment.IndexOf("Environment", StringComparison.OrdinalIgnoreCase) >= 0)
-            {
-                EnvironmentHideList.AddEnvironmentIfMissing(_environment, scan.Entries
-                    .Where(e => e.Renderer != null && IsEnvironmentCandidate(e.Name, e.Path))
-                    .SelectMany(e => new[] { e.Name, GroupName(e.Path) })
-                    .Where(n => !string.IsNullOrEmpty(n))!);
-            }
-
             if (hints != _hiderHints)
             {
                 // ヒントが変わったら前回の非表示を戻してから収集し直す。
@@ -333,7 +329,75 @@ namespace SkyLight.Controllers.Gameplay
             }
             if (hints.Length > 0)
                 _hider.SetVisible(false);
+
+            // 2回目（リング等も出揃い、全部の表示/非表示を済ませた時点）で1回だけ、
+            // 候補名と「SkyLight のどの設定で消えているか」を書く（設定画面の Object 一覧に印を出すため）。
+            if (IsLatePass && _environment.IndexOf("Environment", StringComparison.OrdinalIgnoreCase) >= 0)
+                RecordEnvironmentState(scan);
         }
+
+        // 候補ごとに、そのレンダラーを消している設定の名前を集める。
+        // 全部消えていれば "Structures" のように、一部だけなら "Part:Structures" と書く。
+        // 何も消えていなければ書かない。環境ごとの Hide で消した物は、設定画面が今の Hide から [Hidden] を付けるので、ここでは数えない。
+        private void RecordEnvironmentState(RendererScan scan)
+        {
+            var globalHide = SplitHintList(_config.HideObjectHints);
+            var globalExclude = SplitHintList(_config.HideObjectExcludeHints);
+
+            // 名前 → (レンダラー数, 消えている数, 消した設定)
+            var stats = new Dictionary<string, (int total, int hidden, SortedSet<string> reasons)>(StringComparer.Ordinal);
+            foreach (var e in scan.Entries)
+            {
+                if (e.Renderer == null || !IsEnvironmentCandidate(e.Name, e.Path)) continue;
+                var reason = HiddenReason(e, globalHide, globalExclude);
+                foreach (var n in new[] { EnvironmentHideList.CandidateName(e.Name), GroupName(e.Path) })
+                {
+                    if (string.IsNullOrEmpty(n)) continue;
+                    if (!stats.TryGetValue(n!, out var s)) s = (0, 0, new SortedSet<string>(StringComparer.Ordinal));
+                    s.total++;
+                    if (reason != null) { s.hidden++; s.reasons.Add(reason); }
+                    stats[n!] = s;
+                }
+            }
+
+            var hiddenBy = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var kv in stats)
+            {
+                var (total, hidden, reasons) = kv.Value;
+                if (hidden == 0) continue;
+                var r = string.Join("/", reasons);
+                hiddenBy[kv.Key] = hidden == total ? r : "Part:" + r;
+            }
+
+            EnvironmentHideList.RecordPlayState(_environment, stats.Keys, hiddenBy);
+        }
+
+        // そのレンダラーを SkyLight のどの設定で消しているか（設定画面での呼び名）。消していなければ null。
+        private string? HiddenReason(RendererScan.Entry e, string[] globalHide, string[] globalExclude)
+        {
+            var r = e.Renderer;
+            if (_domeBuilt && _backdrop.IsHiding(r)) return "Sky";
+            if (_floorFlat.IsHiding(r)) return "Floor";
+            if (_structures.IsHiding(r)) return "Structures";
+            if (_ring.IsHiding(r)) return "Ring";
+            if (_neonRenderers.IsHiding(r) || _glowLines.IsHiding(r)) return "Neon";
+            if (_bars.IsHiding(r)) return "Bars";
+            if (_sideLanes.IsHiding(r)) return "SideLanes";
+            if (_lights.IsHiding(r)) return "Lights";
+            if (_logo.IsHiding(r)) return "Logo";
+            if (_otherStructures.IsHiding(r)) return "Others";
+            // 全環境共通の Hide Objects。環境ごとの Hide だけに当たった物は数えない（上のコメント参照）。
+            if (_hider.IsHiding(r) && HintHit(e, globalHide) && !HintHit(e, globalExclude)) return "HideObjects";
+            return null;
+        }
+
+        private static bool HintHit(RendererScan.Entry e, string[] hints)
+            => hints.Any(h => e.Name.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0
+                           || e.Path.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0
+                           || e.ShaderNames.Any(s => s.IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0));
+
+        private static string[] SplitHintList(string s)
+            => (s ?? "").Split(';').Select(x => x.Trim()).Where(x => x.Length > 0).ToArray();
 
         private void ApplyCustomBackground(RendererScan scan)
         {

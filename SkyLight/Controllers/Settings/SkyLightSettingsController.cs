@@ -210,20 +210,8 @@ namespace SkyLight.Controllers.Settings
             set { _config.ShowCustomBackground = value; _config.Changed(); }
         }
 
-        // ─── 任意オブジェクト非表示 ─────────────────────────────
-        [UIValue("hide-object-hints")]
-        public string HideObjectHints
-        {
-            get => _config.HideObjectHints;
-            set { _config.HideObjectHints = value; _config.Changed(); }
-        }
-
-        [UIValue("hide-object-exclude-hints")]
-        public string HideObjectExcludeHints
-        {
-            get => _config.HideObjectExcludeHints;
-            set { _config.HideObjectExcludeHints = value; _config.Changed(); }
-        }
+        // 全環境共通の HideObjectHints / HideObjectExcludeHints は画面に出さない（VR のソフトキーボードで長い名前を
+        // 打つことはまず無く、環境ごとの欄で足りるため）。SkyLight.json を直接書けば今までどおり効く。
 
         [UIValue("dump-scene")]
         public bool DumpScene
@@ -357,8 +345,6 @@ namespace SkyLight.Controllers.Settings
             NotifyPropertyChanged(nameof(RingColor));
             NotifyPropertyChanged(nameof(RingBrightness));
             NotifyPropertyChanged(nameof(RingAlpha));
-            NotifyPropertyChanged(nameof(HideObjectHints));
-            NotifyPropertyChanged(nameof(HideObjectExcludeHints));
             NotifyPropertyChanged(nameof(DumpScene));
         }
 
@@ -541,10 +527,12 @@ namespace SkyLight.Controllers.Settings
             var hidden = SplitHints(key != null ? EnvironmentHideList.GetHideHints(key) : "");
             var plainSelected = StripMark(EnvObjectSelected);
 
+            var hiddenBy = key != null ? EnvironmentHideList.GetHiddenBy(key) : new Dictionary<string, string>();
+
             var options = new List<object>();
             if (key != null)
                 foreach (var c in EnvironmentHideList.GetCandidates(key))
-                    options.Add(hidden.Contains(c, System.StringComparer.OrdinalIgnoreCase) ? HiddenMark + c : c);
+                    options.Add(MarkFor(c, hidden, hiddenBy) + c);
             if (options.Count == 0) options.Add(NoEnv);
             EnvObjectOptions = options;
 
@@ -591,7 +579,28 @@ namespace SkyLight.Controllers.Settings
             RebuildEnvObjectOptions();
         }
 
-        private static string StripMark(string s) => s.StartsWith(HiddenMark) ? s.Substring(HiddenMark.Length) : s;
+        // 候補に付ける印。
+        //   [Hidden]        … この環境の Hide に名前そのものが入っている（Show で戻せる）
+        //   [Hidden:Car]    … Hide の別の名前（部分一致）で隠れている
+        //   [Main]          … 前回遊んだとき、SkyLight の設定（MAIN の Ring など）で消えていた
+        //   [Part]          … 前回遊んだとき、一部だけ消えていた（まとまりの名前など）
+        //   印なし          … 見えている
+        // どの設定で消えたか（Ring など）は HideObjects.json の HiddenBy にある。一覧に出すと長すぎて折り返し、
+        // 下の Show ボタンに重なったので出さない。
+        // Main/Part は遊んだ時点の状態なので、MAIN を切り替えたあとはその環境をもう一度遊ぶまで変わらない。
+        private static string MarkFor(string name, List<string> hidden, Dictionary<string, string> hiddenBy)
+        {
+            if (hidden.Contains(name, System.StringComparer.OrdinalIgnoreCase)) return HiddenMark;
+            var partial = hidden.FirstOrDefault(h => name.IndexOf(h, System.StringComparison.OrdinalIgnoreCase) >= 0);
+            if (partial != null) return $"[Hidden:{partial}] ";
+            if (hiddenBy.TryGetValue(name, out var by) && by.Length > 0)
+                return by.StartsWith("Part:") ? "[Part] " : "[Main] ";
+            return "";
+        }
+
+        // 先頭の印（"[...] "）を外す。
+        private static string StripMark(string s)
+            => System.Text.RegularExpressions.Regex.Replace(s ?? "", @"^\[[^\]]*\] ", "");
 
         private static List<string> SplitHints(string s)
             => (s ?? "").Split(';').Select(x => x.Trim()).Where(x => x.Length > 0).ToList();

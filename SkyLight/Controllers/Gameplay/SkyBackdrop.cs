@@ -83,6 +83,9 @@ namespace SkyLight.Controllers.Gameplay
             if (mirror) cam.backgroundColor = new Color(_color.r, _color.g, _color.b, 1f);
         }
 
+        // 空ドームに置き換えるため、元の背景として非表示にしているか。
+        public bool IsHiding(Renderer r) => r != null && _hidden.Contains(r);
+
         public void SetColor(Color color)
         {
             _color = color;
