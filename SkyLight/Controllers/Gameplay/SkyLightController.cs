@@ -29,6 +29,7 @@ namespace SkyLight.Controllers.Gameplay
         private readonly TargetPainter _lights = new("lights");
         private readonly TargetPainter _logo = new("logo");
         private readonly TargetPainter _otherStructures = new("other-struct");
+        private readonly TargetPainter _hudBackground = new("hud-bg");
         // 構造物・バー・リングは半透明で着色するペインター。
         private readonly TargetPainter _structures = new("struct", excludeFloorLike: true);
         private readonly TargetPainter _bars = new("bars");
@@ -184,6 +185,7 @@ namespace SkyLight.Controllers.Gameplay
         private bool _lightsPainted;
         private bool _logoPainted;
         private bool _otherStructuresPainted;
+        private bool _hudBackgroundPainted;
         private bool _structPainted;
         private bool _barsPainted;
         private bool _ringPainted;
@@ -252,6 +254,7 @@ namespace SkyLight.Controllers.Gameplay
             UpdateVisibilityOnly(scan, _lights, ref _lightsPainted, _config.LightHints, _config.ShowLights);
             UpdateVisibilityOnly(scan, _logo, ref _logoPainted, _config.LogoHints, _config.ShowLogo);
             UpdateVisibilityOnly(scan, _otherStructures, ref _otherStructuresPainted, _config.OtherStructureHints, _config.ShowOtherStructures);
+            UpdateVisibilityOnly(scan, _hudBackground, ref _hudBackgroundPainted, _config.HudBackgroundHints, _config.ShowHudBackground);
 
             // 構造物（名前/シェーダーヒントで対象、除外あり）。Colorize=false なら元の色のまま透明度だけ。
             UpdateTarget(scan, _structures, _config.PaintStructures || !_config.ShowStructures, ref _structPainted,
@@ -384,6 +387,7 @@ namespace SkyLight.Controllers.Gameplay
             if (_lights.IsHiding(r)) return "Lights";
             if (_logo.IsHiding(r)) return "Logo";
             if (_otherStructures.IsHiding(r)) return "Others";
+            if (_hudBackground.IsHiding(r)) return "HudBG";
             // 全環境共通の Hide Objects。環境ごとの Hide だけに当たった物は数えない（上のコメント参照）。
             if (_hider.IsHiding(r) && HintHit(e, globalHide) && !HintHit(e, globalExclude)) return "HideObjects";
             return null;
@@ -692,6 +696,7 @@ namespace SkyLight.Controllers.Gameplay
             _ring.Restore();
             _bars.Restore();
             _structures.Restore();
+            _hudBackground.Restore();
             _otherStructures.Restore();
             _logo.Restore();
             _lights.Restore();
@@ -705,6 +710,7 @@ namespace SkyLight.Controllers.Gameplay
             _lightsPainted = false;
             _logoPainted = false;
             _otherStructuresPainted = false;
+            _hudBackgroundPainted = false;
             _structPainted = false;
             _barsPainted = false;
             _ringPainted = false;

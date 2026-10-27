@@ -60,7 +60,8 @@
     <horizontal spacing='2' pad='0' pref-height='8' child-control-width='true' child-control-height='true' child-expand-width='true' child-expand-height='false'>
       <toggle-setting text='Custom BG' pref-width='52' value='show-custom-background' apply-on-change='true' bind-value='true'
                       hover-hint='Show the CustomBackgrounds mod image during songs (independent of Neon). Takes effect from the next song.' />
-      <text text='' pref-width='52' />
+      <toggle-setting text='HUD BG' pref-width='52' value='show-hud-background' apply-on-change='true' bind-value='true'
+                      hover-hint='Show the dark panels behind the score/combo HUD (BasicGameHUD LeftPanel/RightPanel BG). Visible as tall dark strips on a bright sky. Takes effect from the next song.' />
     </horizontal>
 
     <!-- ───────── Presets ───────── -->

@@ -97,6 +97,13 @@ namespace SkyLight.Controllers.Settings
             set { _config.ShowLogo = value; _config.Changed(); }
         }
 
+        [UIValue("show-hud-background")]
+        public bool ShowHudBackground
+        {
+            get => _config.ShowHudBackground;
+            set { _config.ShowHudBackground = value; _config.Changed(); }
+        }
+
         [UIValue("show-other-structures")]
         public bool ShowOtherStructures
         {
@@ -277,6 +284,7 @@ namespace SkyLight.Controllers.Settings
             _config.ShowLights = d.ShowLights;
             _config.ShowLogo = d.ShowLogo;
             _config.ShowOtherStructures = d.ShowOtherStructures;
+            _config.ShowHudBackground = d.ShowHudBackground;
             _config.PaintFloor = d.PaintFloor;
             _config.FloorColor = d.FloorColor;
             _config.FloorBrightness = d.FloorBrightness;
@@ -319,6 +327,7 @@ namespace SkyLight.Controllers.Settings
             NotifyPropertyChanged(nameof(ShowLights));
             NotifyPropertyChanged(nameof(ShowLogo));
             NotifyPropertyChanged(nameof(ShowOtherStructures));
+            NotifyPropertyChanged(nameof(ShowHudBackground));
             NotifyPropertyChanged(nameof(PaintFloor));
             NotifyPropertyChanged(nameof(FloorColor));
             NotifyPropertyChanged(nameof(FloorBrightness));

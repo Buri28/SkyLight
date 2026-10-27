@@ -70,6 +70,10 @@ namespace SkyLight.Configuration
         // ロゴ（環境名ロゴ等）。
         public virtual bool ShowLogo { get; set; } = true;
         public virtual string LogoHints { get; set; } = "Logo";
+        // スコア横の HUD パネルの背景（BasicGameHUD の LeftPanel/RightPanel の BG＝縦に長い半透明の板、Top＝上端の線）。
+        // 黒い背景では見えないが、空を明るくすると濃い帯として見えるので、既定で隠す。
+        public virtual bool ShowHudBackground { get; set; } = false;
+        public virtual string HudBackgroundHints { get; set; } = "BasicGameHUD/LeftPanel/BG;BasicGameHUD/RightPanel/BG;BasicGameHUD/LeftPanel/Top;BasicGameHUD/RightPanel/Top";
         // その他の構造物（環境固有の演出オブジェクト群）。
         public virtual bool ShowOtherStructures { get; set; } = true;
         public virtual string OtherStructureHints { get; set; } = "Window;Tunnel;MagicDoor;Waterfall;Sun;Rain;Clouds;Aurora;Smoke;Flipbook;Video;Building;Mountain;Orbit;Star;Graffiti;HitQuad;Mesh;Dust;DiamondMirror";
