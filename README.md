@@ -8,6 +8,8 @@
 加齢で視力が落ち暗い背景でノーツが滲んだりブレて見えないので自分用に作ったものです。  
 AIの進化によりブラーが背景や床に効いてしまう問題とリングの描画遅延の問題が解消したので公開します。  
 
+<img src="docs/images/play-shot-2.png" width="640">
+
 ## 対応版
 - Beat Saber 1.40.8 / 1.44.1（1つの DLL が両方で動きます）。
 - 1.44.1 では、manifest の `gameVersion` が 1.40.8 のため、BSIPA が「developed for game version 1.40.8」という警告を出します。読み込み自体はされます。
@@ -24,6 +26,14 @@ BSIPA、BeatSaberMarkupLanguage（BSML）、SiraUtil。
 | Sky / Floor | 空の色・明るさ・不透明度、床の色・明るさ・不透明度、Mirror Reflection |
 | Objects | 構造物とリングの色・明るさ・不透明度 |
 | Hide | 環境ごとに、非表示にするオブジェクトを選ぶ |
+
+| Main | Sky / Floor |
+|---|---|
+| <img src="docs/images/menu-tab0.png" width="400"> | <img src="docs/images/menu-tab1.png" width="400"> |
+
+| Objects | Hide |
+|---|---|
+| <img src="docs/images/menu-tab2.png" width="400"> | <img src="docs/images/menu-tab3.png" width="400"> |
 
 ## 保存先
 `<Beat Saber のフォルダ>\UserData\` の下です。

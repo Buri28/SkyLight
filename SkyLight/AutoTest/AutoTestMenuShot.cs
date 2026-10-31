@@ -47,6 +47,9 @@ namespace SkyLight.AutoTest
 
             yield return new WaitForSeconds(1.5f);
 
+            // README 用の画像にポインター（青い V 字と線）が写らないよう、撮影中は描画を止める。
+            HidePointers();
+
             // タブを1つずつ選んで、上部（menu-tab0.png 〜）と最下部（menu-tab0-bottom.png 〜）を撮る。タブが無い画面なら1つだけ。
             // ドロップダウンの中にも（見えていない）ScrollView があるので、表示中のものすべてを送る。
             var selector = FindComponents(screen.gameObject, "TabSelector").FirstOrDefault();
@@ -82,6 +85,27 @@ namespace SkyLight.AutoTest
             yield return new WaitForSeconds(1.0f);
             AutoTestOptions.Status("DONE");
             if (AutoTestOptions.Quit) Application.Quit();
+        }
+
+        // 撮影に写り込む、メニューのポインター（VRPointer / laser pointer / cursor）・セイバーの軌跡（StaticSaberPreview）・
+        // コントローラーのハンドル（MenuControllers）の Renderer を止める。撮影用なのでゲームを終了するまで戻さない。
+        private static void HidePointers()
+        {
+            int n = 0;
+            foreach (var c in UnityEngine.Object.FindObjectsOfType<Component>())
+            {
+                if (c == null) continue;
+                var name = c.GetType().Name;
+                if (name.IndexOf("Pointer", StringComparison.OrdinalIgnoreCase) < 0 &&
+                    name.IndexOf("Cursor", StringComparison.OrdinalIgnoreCase) < 0) continue;
+                foreach (var r in c.GetComponentsInChildren<Renderer>(true)) { r.enabled = false; n++; }
+            }
+            foreach (var go in UnityEngine.Object.FindObjectsOfType<GameObject>())
+            {
+                if (go == null || (go.name != "StaticSaberPreview" && go.name != "MenuControllers")) continue;
+                foreach (var r in go.GetComponentsInChildren<Renderer>(true)) { r.enabled = false; n++; }
+            }
+            AutoTestOptions.Status($"MENUSHOT pointer renderers hidden: {n}");
         }
 
         private static int CountTabs(GameObject root)
