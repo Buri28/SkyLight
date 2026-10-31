@@ -1,6 +1,6 @@
 {
   "author": "Buri28",
-  "description": "背景（空）・床・リングの色を変えたり、環境の構造物を非表示にして、背景を明るくしノーツの見づらさを抑えるMOD",
+  "description": "Recolor the sky, floor, structures and rings, or hide environment objects, to brighten the background and make notes easier to see.",
   "gameVersion": "1.40.8",
   "id": "SkyLight",
   "name": "SkyLight",
