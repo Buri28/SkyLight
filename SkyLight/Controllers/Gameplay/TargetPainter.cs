@@ -424,7 +424,7 @@ namespace SkyLight.Controllers.Gameplay
                 var shader = Shader.Find("Hidden/Internal-Colored");
                 if (shader == null)
                 {
-                    Plugin.Log.Warn($"[SkyLight][{_tag}] 'Hidden/Internal-Colored' not found; cannot paint.");
+                    Plugin.DebugWarn($"[SkyLight][{_tag}] 'Hidden/Internal-Colored' not found; cannot paint.");
                     return;
                 }
                 _mat = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };

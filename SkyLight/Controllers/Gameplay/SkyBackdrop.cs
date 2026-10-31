@@ -138,7 +138,7 @@ namespace SkyLight.Controllers.Gameplay
             var shader = Shader.Find("Hidden/Internal-Colored");
             if (shader == null)
             {
-                Plugin.Log.Warn("[SkyLight][dome] 'Hidden/Internal-Colored' not found; cannot build sky dome.");
+                Plugin.DebugWarn("[SkyLight][dome] 'Hidden/Internal-Colored' not found; cannot build sky dome.");
                 return;
             }
             _mat = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };

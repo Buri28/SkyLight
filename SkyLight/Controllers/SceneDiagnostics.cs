@@ -106,7 +106,7 @@ namespace SkyLight.Controllers
                               $"path='{path}' size=({b.size.x:0.#},{b.size.y:0.#},{b.size.z:0.#}) shaders=[{shaders}]{tag}");
             }
             var text = sb.ToString();
-            Plugin.Log.Info(text);
+            if (Plugin.IsDebugLoggingEnabled()) Plugin.Log.Info(text);
             return text;
         }
 

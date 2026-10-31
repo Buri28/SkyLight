@@ -63,7 +63,7 @@ namespace SkyLight.Configuration
             }
             catch (Exception ex)
             {
-                Plugin.Log.Warn($"[SkyLight] Preset list failed: {ex.Message}");
+                Plugin.DebugWarn($"[SkyLight] Preset list failed: {ex.Message}");
                 return new List<string>();
             }
         }
@@ -84,7 +84,7 @@ namespace SkyLight.Configuration
             }
             catch (Exception ex)
             {
-                Plugin.Log.Warn($"[SkyLight] Preset save failed ({name}): {ex.Message}");
+                Plugin.DebugWarn($"[SkyLight] Preset save failed ({name}): {ex.Message}");
                 return false;
             }
         }
@@ -99,7 +99,7 @@ namespace SkyLight.Configuration
             var path = PathFor(name);
             if (!File.Exists(path))
             {
-                Plugin.Log.Warn($"[SkyLight] Preset not found: {name}");
+                Plugin.DebugWarn($"[SkyLight] Preset not found: {name}");
                 return false;
             }
             try
@@ -129,7 +129,7 @@ namespace SkyLight.Configuration
             }
             catch (Exception ex)
             {
-                Plugin.Log.Warn($"[SkyLight] Preset load failed ({name}): {ex.Message}");
+                Plugin.DebugWarn($"[SkyLight] Preset load failed ({name}): {ex.Message}");
                 return false;
             }
         }
@@ -146,7 +146,7 @@ namespace SkyLight.Configuration
             }
             catch (Exception ex)
             {
-                Plugin.Log.Warn($"[SkyLight] Preset delete failed ({name}): {ex.Message}");
+                Plugin.DebugWarn($"[SkyLight] Preset delete failed ({name}): {ex.Message}");
                 return false;
             }
         }

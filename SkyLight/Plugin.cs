@@ -22,11 +22,17 @@ namespace SkyLight
         internal static PluginConfig Config { get; private set; } = null!;
 
         // 詳細ログ。Config.DebugLogging が ON のときだけ Debug レベルで出力する（既定OFF）。
-        // Warn/Error は従来どおり Plugin.Log.Warn/Error で常時出力する。
+        // Warn 以上も公開用に常時は出さず、DebugLogging が ON のときだけ DebugWarn で出す。
         internal static void DebugLog(string message)
         {
             if (Config != null && Config.DebugLogging)
                 Log.Debug(message);
+        }
+
+        internal static void DebugWarn(string message)
+        {
+            if (Config != null && Config.DebugLogging)
+                Log.Warn(message);
         }
 
         internal static bool IsDebugLoggingEnabled()

@@ -29,7 +29,7 @@ namespace SkyLight.Installers
             if (_config.DebugLogging)
             {
                 try { MenuDiagnostics.DumpOnce(); }
-                catch (Exception ex) { Plugin.Log.Warn($"[SkyLight] Menu dump failed: {ex.Message}"); }
+                catch (Exception ex) { Plugin.DebugWarn($"[SkyLight] Menu dump failed: {ex.Message}"); }
             }
         }
 

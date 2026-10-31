@@ -56,7 +56,7 @@ namespace SkyLight.AutoTest
                 {
                     // status.txt は1行1件で読むので、改行の無い1行にする（スタックはログにだけ出す）。
                     lastError = $"{ex.GetType().Name}: {ex.Message}".Replace('\r', ' ').Replace('\n', ' ');
-                    Plugin.Log.Warn($"[SkyLight][autotest] start failed: {ex}");
+                    Plugin.DebugWarn($"[SkyLight][autotest] start failed: {ex}");
                     if (_invoked) break; // 曲の開始を呼んだ後の例外では、二重に始めないよう再試行しない
                 }
                 yield return new WaitForSeconds(1f);

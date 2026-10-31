@@ -112,16 +112,16 @@ namespace SkyLight.Controllers.Gameplay
 
             // ダンプは DumpScene のときだけ（毎曲のオブジェクト走査コストを避ける）。
             // DumpScene 単独 = Hide Objects 用の候補一覧のみ。フル診断は DebugLogging も ON のとき。
-            if (_config.DumpScene)
+            if (_config.DumpScene && _config.DebugLogging)
             {
                 try { SceneDiagnostics.DumpHideCandidates(_config); }
-                catch (Exception ex) { Plugin.Log.Warn($"[SkyLight] Hide candidates dump failed: {ex.Message}"); }
+                catch (Exception ex) { Plugin.DebugWarn($"[SkyLight] Hide candidates dump failed: {ex.Message}"); }
                 if (_config.DebugLogging)
                 {
                     try { SceneDiagnostics.Dump(); }
-                    catch (Exception ex) { Plugin.Log.Warn($"[SkyLight] Scene dump failed: {ex.Message}"); }
+                    catch (Exception ex) { Plugin.DebugWarn($"[SkyLight] Scene dump failed: {ex.Message}"); }
                     try { BloomDiagnostics.DumpOnce(); }
-                    catch (Exception ex) { Plugin.Log.Warn($"[SkyLight] Bloom dump failed: {ex.Message}"); }
+                    catch (Exception ex) { Plugin.DebugWarn($"[SkyLight] Bloom dump failed: {ex.Message}"); }
                 }
             }
 
@@ -164,7 +164,7 @@ namespace SkyLight.Controllers.Gameplay
         private void SafeApplyMode()
         {
             try { ApplyMode(); }
-            catch (Exception ex) { Plugin.Log.Warn($"[SkyLight] ApplyMode failed: {ex}"); }
+            catch (Exception ex) { Plugin.DebugWarn($"[SkyLight] ApplyMode failed: {ex}"); }
         }
 
         // ─── 着色の適用（全対象 半透明＝B方式） ───────────────────────────
@@ -194,18 +194,18 @@ namespace SkyLight.Controllers.Gameplay
         {
             // 診断: Initialize()時点だと実環境がまだ読み込み切っていないことがあるため、
             // 本塗りと同じこのタイミング(3フレーム後)でも再度ダンプする（DumpSceneのときだけ）。
-            if (_config.DumpScene)
+            if (_config.DumpScene && _config.DebugLogging)
             {
                 try { SceneDiagnostics.DumpHideCandidates(_config); }
-                catch (Exception ex) { Plugin.Log.Warn($"[SkyLight] Hide candidates dump (ApplyMode) failed: {ex.Message}"); }
+                catch (Exception ex) { Plugin.DebugWarn($"[SkyLight] Hide candidates dump (ApplyMode) failed: {ex.Message}"); }
                 if (_config.DebugLogging)
                 {
                     try { SceneDiagnostics.Dump(); }
-                    catch (Exception ex) { Plugin.Log.Warn($"[SkyLight] Scene dump (ApplyMode) failed: {ex.Message}"); }
+                    catch (Exception ex) { Plugin.DebugWarn($"[SkyLight] Scene dump (ApplyMode) failed: {ex.Message}"); }
                     if (IsLatePass)
                     {
                         try { SceneDiagnostics.DumpShaderProperties("Spectrogram"); }
-                        catch (Exception ex) { Plugin.Log.Warn($"[SkyLight] Shader property dump failed: {ex.Message}"); }
+                        catch (Exception ex) { Plugin.DebugWarn($"[SkyLight] Shader property dump failed: {ex.Message}"); }
                     }
                 }
             }

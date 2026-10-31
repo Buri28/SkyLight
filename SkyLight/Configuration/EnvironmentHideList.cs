@@ -41,7 +41,7 @@ namespace SkyLight.Configuration
             }
             catch (Exception ex)
             {
-                Plugin.Log.Warn($"[SkyLight] HideObjects.json read failed: {ex.Message}");
+                Plugin.DebugWarn($"[SkyLight] HideObjects.json read failed: {ex.Message}");
                 return new List<(string, string)>();
             }
         }
@@ -75,7 +75,7 @@ namespace SkyLight.Configuration
             }
             catch (Exception ex)
             {
-                Plugin.Log.Warn($"[SkyLight] HideObjects.json write failed: {ex.Message}");
+                Plugin.DebugWarn($"[SkyLight] HideObjects.json write failed: {ex.Message}");
             }
         }
 
@@ -89,7 +89,7 @@ namespace SkyLight.Configuration
             }
             catch (Exception ex)
             {
-                Plugin.Log.Warn($"[SkyLight] HideObjects.json read failed: {ex.Message}");
+                Plugin.DebugWarn($"[SkyLight] HideObjects.json read failed: {ex.Message}");
                 return "";
             }
         }
@@ -141,11 +141,11 @@ namespace SkyLight.Configuration
                 root[environment] = entry;
                 Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
                 File.WriteAllText(FilePath, root.ToString(Formatting.Indented));
-                if (isNew) Plugin.Log.Info($"[SkyLight] Added '{environment}' to {FilePath}");
+                if (isNew) Plugin.DebugLog($"[SkyLight] Added '{environment}' to {FilePath}");
             }
             catch (Exception ex)
             {
-                Plugin.Log.Warn($"[SkyLight] HideObjects.json write failed: {ex.Message}");
+                Plugin.DebugWarn($"[SkyLight] HideObjects.json write failed: {ex.Message}");
             }
         }
 

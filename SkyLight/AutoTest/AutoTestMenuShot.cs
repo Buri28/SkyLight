@@ -41,7 +41,7 @@ namespace SkyLight.AutoTest
             catch (Exception ex)
             {
                 AutoTestOptions.Status("FAIL menushot parse: " + ex.GetType().Name + ": " + ex.Message.Replace('\r', ' ').Replace('\n', ' '));
-                Plugin.Log.Warn($"[SkyLight][autotest] menushot parse failed: {ex}");
+                Plugin.DebugWarn($"[SkyLight][autotest] menushot parse failed: {ex}");
                 yield break;
             }
 
@@ -117,7 +117,7 @@ namespace SkyLight.AutoTest
         {
             if (target == null) return;
             try { target.GetType().GetMethod(method, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.Invoke(target, args); }
-            catch (Exception ex) { Plugin.Log.Warn($"[SkyLight][autotest] {method} failed: {ex.Message}"); }
+            catch (Exception ex) { Plugin.DebugWarn($"[SkyLight][autotest] {method} failed: {ex.Message}"); }
         }
     }
 }

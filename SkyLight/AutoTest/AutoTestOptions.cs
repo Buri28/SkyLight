@@ -76,7 +76,7 @@ namespace SkyLight.AutoTest
                 File.AppendAllText(Path.Combine(OutputDir, "status.txt"),
                     $"{DateTime.Now:HH:mm:ss} {line}{Environment.NewLine}");
             }
-            catch (Exception ex) { Plugin.Log.Warn($"[SkyLight][autotest] status write failed: {ex.Message}"); }
+            catch (Exception ex) { Plugin.DebugWarn($"[SkyLight][autotest] status write failed: {ex.Message}"); }
         }
 
         private static bool TryValue(string arg, string prefix, out string value)
