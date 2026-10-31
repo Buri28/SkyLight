@@ -8,7 +8,10 @@
 加齢で視力が落ち暗い背景でノーツが滲んだりブレて見えないので自分用に作ったものです。  
 AIの進化によりブラーが背景や床に効いてしまう問題とリングの描画遅延の問題が解消したので公開します。  
 
-<img src="docs/images/play-shot-2.png" width="640">
+|  |  |
+|---|---|
+| <img src="docs/images/play-shot-2.png" width="640"> | <img width="640" alt="image" src="https://github.com/user-attachments/assets/ad7f05c3-a804-41ca-b009-99f995bc32f6" /> |
+
 
 ## 対応版
 - Beat Saber 1.40.8 / 1.44.1（1つの DLL が両方で動きます）。
