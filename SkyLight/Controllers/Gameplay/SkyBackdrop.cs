@@ -20,6 +20,11 @@ namespace SkyLight.Controllers.Gameplay
         // 半透明モード用：空の部分のアルファだけを 0 にする描画（色は変えない）。詳しくは EnsureAlphaClearMaterial。
         private Material? _alphaClearMat;
         private readonly List<Renderer> _hidden = new(); // 非表示にした元の背景クワッド（不透明モードのみ使用）
+        private readonly Dictionary<Renderer, bool> _hiddenOrigEnabled = new(); // 隠す前の enabled（Cleanup で戻す）
+        // 反射カメラ（MirrorCam）かどうかを、カメラごとに1回だけ名前で調べて覚える（毎フレーム cam.name で文字列を作らない）。
+        private readonly HashSet<int> _mirrorCams = new();
+        private readonly HashSet<int> _otherCams = new();
+        private static readonly int ColorId = Shader.PropertyToID("_Color");
         private Transform? _camT;
         private bool _logged;
         private bool _transparentMode; // alpha<1 のとき true。元背景を隠さず半透明ブレンドする。
@@ -37,21 +42,26 @@ namespace SkyLight.Controllers.Gameplay
 
             _transparentMode = color.a < 0.999f;
 
+            EnsureMaterial(color);
+
             // 不透明モードのみ: 元の背景クワッドを集めて非表示にする。ドームが背景を置き換える。
             // 透過モードでは元の背景を残し、その上に半透明の色を重ねるので隠さない。
+            // ドームの材質が作れなかったとき（_mat==null）は、ドームが無いので、元の背景も隠さない（背景が真っ黒になるため）。
             _hidden.Clear();
-            if (!_transparentMode)
+            _hiddenOrigEnabled.Clear();
+            if (_mat != null && !_transparentMode)
             {
                 var hints = (hideHints ?? "").Split(';').Select(h => h.Trim()).Where(h => h.Length > 0).ToArray();
                 foreach (var e in scan.Entries)
                 {
                     if (e.Renderer != null &&
                         e.ShaderNames.Any(s => hints.Any(h => s.IndexOf(h, System.StringComparison.OrdinalIgnoreCase) >= 0)))
+                    {
                         _hidden.Add(e.Renderer);
+                        _hiddenOrigEnabled[e.Renderer] = e.Renderer.enabled; // 元から無効だったものは、戻すときも無効のまま
+                    }
                 }
             }
-
-            EnsureMaterial(color);
             // 不透明モードでもドームを描く。1.40.8 はカメラの backgroundColor（FillCameraBackgrounds）だけで
             // 空が出たが、1.44.1 ではそれだけだと背景が黒いままだったため、カメラ設定に頼らないドームを使う。
             EnsureDome(reflectInMirror ? ReflectedDomeLayer : DomeLayer, scale);
@@ -59,8 +69,16 @@ namespace SkyLight.Controllers.Gameplay
 
             // 反射床に空を映すとき：反射カメラが描く間だけ、空をアルファ 1 で描き、背景色もアルファ 1 にする。
             // （反射床はアルファ 0 の反射を黒く出す。画面側はアルファ 0 のままなので Bloom で白飛びしない）
-            if (reflectInMirror && !_reflectInMirror) Camera.onPreRender += OnCameraPreRender;
-            else if (!reflectInMirror && _reflectInMirror) Camera.onPreRender -= OnCameraPreRender;
+            if (reflectInMirror && !_reflectInMirror)
+            {
+                Camera.onPreRender += OnCameraPreRender;
+                Camera.onPostRender += OnCameraPostRender;
+            }
+            else if (!reflectInMirror && _reflectInMirror)
+            {
+                Camera.onPreRender -= OnCameraPreRender;
+                Camera.onPostRender -= OnCameraPostRender;
+            }
             _reflectInMirror = reflectInMirror;
 
             if (!_logged)
@@ -75,12 +93,30 @@ namespace SkyLight.Controllers.Gameplay
         }
 
         // 反射カメラ（MirrorRendererSO が作る "MirrorCam<ID>"）が描く直前だけアルファ 1、それ以外のカメラはアルファ 0。
+        // 描画の順が想定と違っても白飛びしないよう、反射カメラが描き終わったとき（onPostRender）にも、アルファ 0 へ戻す。
+        // （半透明モードでは使わない。床の反射は FloorColor の直接塗りに切り替える＝SkyLightController の _useMirrorReflection）
         private void OnCameraPreRender(Camera cam)
         {
             if (_mat == null || _transparentMode || cam == null) return;
-            bool mirror = cam.name.StartsWith("MirrorCam", System.StringComparison.Ordinal);
-            _mat.SetColor("_Color", mirror ? new Color(_color.r, _color.g, _color.b, 1f) : DomeOutput(_color));
+            bool mirror = IsMirrorCam(cam);
+            _mat.SetColor(ColorId, mirror ? new Color(_color.r, _color.g, _color.b, 1f) : DomeOutput(_color));
             if (mirror) cam.backgroundColor = new Color(_color.r, _color.g, _color.b, 1f);
+        }
+
+        private void OnCameraPostRender(Camera cam)
+        {
+            if (_mat == null || _transparentMode || cam == null) return;
+            if (IsMirrorCam(cam)) _mat.SetColor(ColorId, DomeOutput(_color));
+        }
+
+        private bool IsMirrorCam(Camera cam)
+        {
+            int id = cam.GetInstanceID();
+            if (_mirrorCams.Contains(id)) return true;
+            if (_otherCams.Contains(id)) return false;
+            bool mirror = cam.name.StartsWith("MirrorCam", System.StringComparison.Ordinal);
+            (mirror ? _mirrorCams : _otherCams).Add(id);
+            return mirror;
         }
 
         // 空ドームに置き換えるため、元の背景として非表示にしているか。
@@ -114,10 +150,18 @@ namespace SkyLight.Controllers.Gameplay
         public void Cleanup()
         {
             foreach (var r in _hidden)
-                if (r != null) r.enabled = true; // 元に戻す（シーン破棄前提だが念のため）
+                if (r != null) r.enabled = _hiddenOrigEnabled.TryGetValue(r, out var orig) ? orig : true; // 元に戻す（シーン破棄前提だが念のため）
             _hidden.Clear();
+            _hiddenOrigEnabled.Clear();
+            _mirrorCams.Clear();
+            _otherCams.Clear();
 
-            if (_reflectInMirror) { Camera.onPreRender -= OnCameraPreRender; _reflectInMirror = false; }
+            if (_reflectInMirror)
+            {
+                Camera.onPreRender -= OnCameraPreRender;
+                Camera.onPostRender -= OnCameraPostRender;
+                _reflectInMirror = false;
+            }
             if (_dome != null) { Object.Destroy(_dome); _dome = null; }
             if (_mat != null) { Object.Destroy(_mat); _mat = null; }
             if (_alphaClearMat != null) { Object.Destroy(_alphaClearMat); _alphaClearMat = null; }
@@ -174,14 +218,7 @@ namespace SkyLight.Controllers.Gameplay
         private void EnsureAlphaClearMaterial(Shader shader)
         {
             if (_alphaClearMat != null) return;
-            _alphaClearMat = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };
-            _alphaClearMat.SetColor("_Color", new Color(1f, 1f, 1f, 0f));
-            _alphaClearMat.SetInt("_SrcBlend", (int)BlendMode.DstColor);
-            _alphaClearMat.SetInt("_DstBlend", (int)BlendMode.Zero);
-            _alphaClearMat.SetInt("_Cull", (int)CullMode.Front);
-            _alphaClearMat.SetInt("_ZWrite", 0);
-            _alphaClearMat.SetInt("_ZTest", (int)CompareFunction.LessEqual);
-            _alphaClearMat.renderQueue = (int)RenderQueue.Transparent - 1;
+            _alphaClearMat = AlphaClearMaterial.Create(shader, CullMode.Front); // 内側から見る立方体なので Front を切る
         }
 
         private void EnsureDome(int layer, float scale)

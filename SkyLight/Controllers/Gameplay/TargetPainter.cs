@@ -6,8 +6,8 @@ using UnityEngine.Rendering;
 
 namespace SkyLight.Controllers.Gameplay
 {
-    // 対象レンダラー（名前/シェーダー名のヒントで一致）を「半透明の単色」へ差し替えるペインター。
-    // alpha でオブジェクト自体の不透明度を決め、後ろにあるものが透けて見える（透明度=B方式）。
+    // 対象レンダラー（名前/シェーダー名のヒントで一致）の材質を「単色」へ差し替える（または隠すだけの）ペインター。
+    // alpha=1 なら不透明、alpha<1 なら半透明で、後ろにあるものが透けて見える。
     // 床・構造物・リングなど用途ごとにインスタンスを使う。
     //
     // Bloom ON で光らせないため、描くものは画面のアルファを 0 にする（全画面ブルームはアルファで光る量を決める）。
@@ -35,8 +35,11 @@ namespace SkyLight.Controllers.Gameplay
         private bool _colorize = true;
         private bool _assigned;        // 単色マテリアルを各レンダラーへ代入済みか
         private bool _clonesAssigned;  // 複製マテリアルを代入済みか
+        private bool _touchedMaterials; // 材質を差し替えたことがあるか。Restore で、差し替えていないレンダラー（隠すだけ）の材質を触らないため
         private Color _lastColor = new Color(-1f, -1f, -1f, -1f); // 直近に適用した色（変化なしなら何もしない）
-        private readonly bool _alwaysReassign; // Apply のたびに材質配列を代入し直す（ミラー等が戻してくる床向け。対象は数個）
+        // Apply のたびに材質配列を代入し直す。床だけが使う（対象は数個で軽い）。元は、反射床（Mirror）が描画直前に材質を戻すための対策。
+        // 今は床のときミラーのコンポーネントを止めているので、まだ必要かは未確認（念のため残している）。
+        private readonly bool _alwaysReassign;
         private readonly bool _excludeFloorLike; // 構造物判定から床状の広い平面を除外する
         private readonly bool _writeDepth; // 床のように後ろへ色が抜けないよう深度を書き込む
         private readonly HashSet<int> _ids = new(); // 収集済みレンダラーの InstanceID（増分収集の重複防止）
@@ -252,7 +255,7 @@ namespace SkyLight.Controllers.Gameplay
         public void Apply(Color rgba)
         {
             // 何も変わっていなければ何もしない。
-            // alwaysReassign（床=ミラーが戻す）と、色が変わったとき、新規収集直後だけ実処理する。
+            // alwaysReassign（床）と、色が変わったとき、新規収集直後だけ実処理する。
             bool done = _colorize ? _assigned : _clonesAssigned;
             if (done && !_alwaysReassign && rgba == _lastColor)
                 return;
@@ -281,6 +284,7 @@ namespace SkyLight.Controllers.Gameplay
                 renderer.sharedMaterials = WithAlphaClear(mats, clear);
             }
             _assigned = true;
+            _touchedMaterials = true;
         }
 
         // 半透明のときは、材質配列の最後にアルファを消す材質を足す（同じ形をもう1回描く）。
@@ -301,14 +305,7 @@ namespace SkyLight.Controllers.Gameplay
             if (_alphaClearMat != null) return _alphaClearMat;
             var shader = Shader.Find("Hidden/Internal-Colored");
             if (shader == null) return null;
-            _alphaClearMat = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };
-            _alphaClearMat.SetColor("_Color", new Color(1f, 1f, 1f, 0f));
-            _alphaClearMat.SetInt("_SrcBlend", (int)BlendMode.DstColor);
-            _alphaClearMat.SetInt("_DstBlend", (int)BlendMode.Zero);
-            _alphaClearMat.SetInt("_Cull", (int)CullMode.Off);
-            _alphaClearMat.SetInt("_ZWrite", 0);
-            _alphaClearMat.SetInt("_ZTest", (int)CompareFunction.LessEqual);
-            _alphaClearMat.renderQueue = (int)RenderQueue.Transparent - 1;
+            _alphaClearMat = AlphaClearMaterial.Create(shader, CullMode.Off);
             return _alphaClearMat;
         }
 
@@ -376,12 +373,16 @@ namespace SkyLight.Controllers.Gameplay
             foreach (var (renderer, clones) in _cloned)
                 if (renderer != null) renderer.sharedMaterials = WithAlphaClear(clones, clear);
             _clonesAssigned = true;
+            _touchedMaterials = true;
         }
 
         public void Restore()
         {
-            foreach (var (renderer, original) in _painted)
-                if (renderer != null) renderer.sharedMaterials = original;
+            // 材質を差し替えていないとき（隠すだけの対象）は、古いスナップショットで他の MOD の材質を上書きしないよう触らない
+            if (_touchedMaterials)
+                foreach (var (renderer, original) in _painted)
+                    if (renderer != null) renderer.sharedMaterials = original;
+            _touchedMaterials = false;
             _painted.Clear();
 
             foreach (var (renderer, origEnabled) in _hiddenRenderers)
@@ -470,15 +471,9 @@ namespace SkyLight.Controllers.Gameplay
             _logged = true;
         }
 
-        private static string[] Split(string s)
-            => (s ?? "").Split(';').Select(x => x.Trim()).Where(x => x.Length > 0).ToArray();
+        private static string[] Split(string s) => HintUtil.Split(s);
 
-        private static string GetPath(Transform t)
-        {
-            var stack = new Stack<string>();
-            for (var cur = t; cur != null; cur = cur.parent) stack.Push(cur.name);
-            return string.Join("/", stack);
-        }
+        private static string GetPath(Transform t) => HintUtil.GetPath(t);
 
         private static bool IsFloorLike(Renderer r)
         {

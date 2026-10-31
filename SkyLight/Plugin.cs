@@ -1,11 +1,9 @@
-using HarmonyLib;
 using IPA;
 using IPA.Config;
 using IPA.Config.Stores;
 using SkyLight.Configuration;
 using SkyLight.Installers;
 using SiraUtil.Zenject;
-using System.Reflection;
 using IPALogger = IPA.Logging.Logger;
 
 namespace SkyLight
@@ -16,8 +14,6 @@ namespace SkyLight
     {
         // どこからでもログを書けるようにstaticで公開
         internal static IPALogger Log { get; private set; } = null!;
-        // Harmonyパッチ（現在は未使用だが将来のパッチ用に確保）
-        internal static Harmony HarmonyInstance { get; private set; } = null!;
         // 設定ファイル（UserData/SkyLight.json）へのアクセス
         internal static PluginConfig Config { get; private set; } = null!;
 
@@ -51,8 +47,6 @@ namespace SkyLight
         {
             Log             = logger;
             Config          = conf.Generated<PluginConfig>(); // IPAが設定ファイルを自動生成・ロード
-            PluginConfig.Instance = Config;
-            HarmonyInstance = new Harmony("com.buri28.skylight");
 
             zenjector.UseLogger(logger);
 
@@ -65,19 +59,17 @@ namespace SkyLight
             DebugLog("SkyLight initialized.");
         }
 
-        // アプリ起動時（Init後）に呼ばれる。Harmonyパッチを適用する
+        // アプリ起動時（Init後）に呼ばれる
         [OnStart]
         public void OnApplicationStart()
         {
-            HarmonyInstance.PatchAll(Assembly.GetExecutingAssembly());
             DebugLog("SkyLight started.");
         }
 
-        // アプリ終了時に呼ばれる。Harmonyパッチを全て解除する
+        // アプリ終了時に呼ばれる
         [OnExit]
         public void OnApplicationQuit()
         {
-            HarmonyInstance.UnpatchSelf();
             DebugLog("SkyLight exited.");
         }
     }

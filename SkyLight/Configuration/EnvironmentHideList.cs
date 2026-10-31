@@ -41,7 +41,7 @@ namespace SkyLight.Configuration
             }
             catch (Exception ex)
             {
-                Plugin.DebugWarn($"[SkyLight] HideObjects.json read failed: {ex.Message}");
+                Plugin.DebugWarn($"[SkyLight] HideObjects.json read failed (ListEnvironments): {ex.Message}");
                 return new List<(string, string)>();
             }
         }
@@ -54,7 +54,11 @@ namespace SkyLight.Configuration
                 return (Load()?[environment]?["Candidates"] as JArray)?.Select(t => t.Value<string>() ?? "")
                        .Where(n => n.Length > 0).ToList() ?? new List<string>();
             }
-            catch { return new List<string>(); }
+            catch (Exception ex)
+            {
+                Plugin.DebugWarn($"[SkyLight] HideObjects.json read failed (GetCandidates): {ex.Message}");
+                return new List<string>();
+            }
         }
 
         // 設定画面用：その環境の Hide を書き換えて保存する（ほかの環境・項目はそのまま）。
@@ -71,11 +75,11 @@ namespace SkyLight.Configuration
                 }
                 entry["Hide"] = hints ?? "";
                 Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
-                File.WriteAllText(FilePath, root.ToString(Formatting.Indented));
+                SafeFile.WriteAllText(FilePath, root.ToString(Formatting.Indented));
             }
             catch (Exception ex)
             {
-                Plugin.DebugWarn($"[SkyLight] HideObjects.json write failed: {ex.Message}");
+                Plugin.DebugWarn($"[SkyLight] HideObjects.json write failed (SetHideHints): {ex.Message}");
             }
         }
 
@@ -89,14 +93,14 @@ namespace SkyLight.Configuration
             }
             catch (Exception ex)
             {
-                Plugin.DebugWarn($"[SkyLight] HideObjects.json read failed: {ex.Message}");
+                Plugin.DebugWarn($"[SkyLight] HideObjects.json read failed (GetHideHints): {ex.Message}");
                 return "";
             }
         }
 
         // 候補に載せる名前。"Fence (12)" のような番号違いは "Fence" にまとめる（Hide は部分一致なので "Fence" で全部に当たる）。
-        public static string CandidateName(string name)
-            => System.Text.RegularExpressions.Regex.Replace(name ?? "", @" \(\d+\)$", "");
+        private static readonly System.Text.RegularExpressions.Regex NumberSuffix = new System.Text.RegularExpressions.Regex(@" \(\d+\)$");
+        public static string CandidateName(string name) => NumberSuffix.Replace(name ?? "", "");
 
         // 設定画面用：前回遊んだときに SkyLight の設定で消えていた物（名前 → "Structures" / "Part:Structures" など）。
         public static Dictionary<string, string> GetHiddenBy(string environment)
@@ -108,7 +112,10 @@ namespace SkyLight.Configuration
                     foreach (var p in o.Properties())
                         result[p.Name] = p.Value.Value<string>() ?? "";
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Plugin.DebugWarn($"[SkyLight] HideObjects.json read failed (GetHiddenBy): {ex.Message}");
+            }
             return result;
         }
 
@@ -140,19 +147,40 @@ namespace SkyLight.Configuration
                 entry["HiddenBy"] = hidden;
                 root[environment] = entry;
                 Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
-                File.WriteAllText(FilePath, root.ToString(Formatting.Indented));
+                SafeFile.WriteAllText(FilePath, root.ToString(Formatting.Indented));
                 if (isNew) Plugin.DebugLog($"[SkyLight] Added '{environment}' to {FilePath}");
             }
             catch (Exception ex)
             {
-                Plugin.DebugWarn($"[SkyLight] HideObjects.json write failed: {ex.Message}");
+                Plugin.DebugWarn($"[SkyLight] HideObjects.json write failed (RecordPlayState): {ex.Message}");
             }
         }
 
+        // 読む。ファイルが無ければ null。JSON が壊れていたら .broken に退避して null（＝空から作り直す。
+        // 壊れたままだと、毎回の読み込みが失敗して、Hide が保存されず候補も増えなくなる）。
         private static JObject? Load()
         {
             if (!File.Exists(FilePath)) return null;
-            return JObject.Parse(File.ReadAllText(FilePath));
+            try
+            {
+                // 日付に見える名前（"2023-01-01" など）を DateTime に変えない
+                using var reader = new JsonTextReader(new StringReader(File.ReadAllText(FilePath))) { DateParseHandling = DateParseHandling.None };
+                return JObject.Load(reader);
+            }
+            catch (JsonException ex)
+            {
+                Plugin.DebugWarn($"[SkyLight] HideObjects.json is broken; moved to .broken and starting empty: {ex.Message}");
+                try
+                {
+                    File.Copy(FilePath, FilePath + ".broken", true);
+                    File.Delete(FilePath);
+                }
+                catch (Exception ioEx)
+                {
+                    Plugin.DebugWarn($"[SkyLight] HideObjects.json could not be moved: {ioEx.Message}");
+                }
+                return null;
+            }
         }
     }
 }

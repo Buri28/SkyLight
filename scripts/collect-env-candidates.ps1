@@ -19,7 +19,7 @@ $collectDir = Join-Path $inst "UserData\SkyLight\EnvCandidates"
 New-Item -ItemType Directory -Force $collectDir | Out-Null
 
 # 1) 環境の一覧（最初の1回だけビルドする）
-& powershell -ExecutionPolicy Bypass -File $autotest -Version $Version -ListEnvs | Select-String "RESULT"
+& powershell -ExecutionPolicy Bypass -File $autotest -Version $Version -InstancesDir $InstancesDir -ListEnvs | Select-String "RESULT"
 $envs = Get-Content (Join-Path $outDir "envs.txt") -Encoding UTF8 | ForEach-Object { $_.Split("`t")[0] } | Where-Object { $_ -ne "" }
 $onlyList = ($Only -join ",").Split(",") | Where-Object { $_ -ne "" }
 if ($onlyList.Count -gt 0) { $envs = $envs | Where-Object { $onlyList -contains $_ } }
@@ -29,7 +29,7 @@ Write-Host "Environments: $($envs.Count)"
 # 2) 環境ごとに1曲
 $summary = @()
 foreach ($e in $envs) {
-    $r = & powershell -ExecutionPolicy Bypass -File $autotest -Version $Version -NoBuild -Env $e -Delay $Delay -Shots 1 2>&1 | Select-String "RESULT"
+    $r = & powershell -ExecutionPolicy Bypass -File $autotest -Version $Version -InstancesDir $InstancesDir -NoBuild -Env $e -Delay $Delay -Shots 1 2>&1 | Select-String "RESULT"
     $cand = Join-Path $outDir "candidates.txt"
     $shot = Join-Path $outDir "shot-1.png"
     if (Test-Path $cand) { Copy-Item $cand (Join-Path $collectDir "$e.txt") -Force }

@@ -13,7 +13,7 @@ namespace SkyLight.AutoTest
     /// <summary>
     /// 自動テスト用：メニューで SkyLight の設定画面を目の前に浮かべて撮影する（--skylight-menushot）。
     /// 本物の MODS タブまで画面遷移するのは手間なので、同じ BSML を同じコントローラーで浮かべた画面に作る。
-    ///   menu-tab0.png 〜：タブごと / menu-last-bottom.png：最後のタブを一番下までスクロール
+    ///   menu-tab0.png 〜：タブごとの上部 / menu-tab0-bottom.png 〜：タブごとの最下部（スクロールして撮る）
     ///   menu-hide-pressed.png：--skylight-env の環境で、--skylight-menushot-object の候補の Hide を押した状態
     /// Hide を押した分は撮影後に元へ戻す（HideObjects.json を書き換えたままにしない）。
     /// </summary>
@@ -47,7 +47,8 @@ namespace SkyLight.AutoTest
 
             yield return new WaitForSeconds(1.5f);
 
-            // タブを1つずつ選んで撮る（menu-tab0.png 〜）。タブが無い画面なら1枚だけ。
+            // タブを1つずつ選んで、上部（menu-tab0.png 〜）と最下部（menu-tab0-bottom.png 〜）を撮る。タブが無い画面なら1つだけ。
+            // ドロップダウンの中にも（見えていない）ScrollView があるので、表示中のものすべてを送る。
             var selector = FindComponents(screen.gameObject, "TabSelector").FirstOrDefault();
             int tabCount = selector != null ? CountTabs(screen.gameObject) : 1;
             for (int i = 0; i < tabCount; i++)
@@ -55,17 +56,14 @@ namespace SkyLight.AutoTest
                 if (selector != null) SelectTab(selector, i);
                 yield return new WaitForSeconds(1.0f);
                 yield return Shot($"menu-tab{i}.png");
+                foreach (var sv in FindComponents(screen.gameObject, "ScrollView"))
+                {
+                    CallIfExists(sv, "UpdateContentSize");
+                    CallIfExists(sv, "ScrollToEnd", false);
+                }
+                yield return new WaitForSeconds(1.0f);
+                yield return Shot($"menu-tab{i}-bottom.png");
             }
-
-            // 最後のタブ（Hide）を一番下までスクロールして撮る。
-            // ドロップダウンの中にも（見えていない）ScrollView があるので、表示中のものすべてを送る。
-            foreach (var sv in FindComponents(screen.gameObject, "ScrollView"))
-            {
-                CallIfExists(sv, "UpdateContentSize");
-                CallIfExists(sv, "ScrollToEnd", false);
-            }
-            yield return new WaitForSeconds(1.0f);
-            yield return Shot("menu-last-bottom.png");
 
             // 候補を選んで Hide を押した状態。
             var obj = AutoTestOptions.MenuShotObject;

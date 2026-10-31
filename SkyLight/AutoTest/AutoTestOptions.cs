@@ -9,7 +9,7 @@ namespace SkyLight.AutoTest
     /// <summary>
     /// 自動テストの設定。起動引数で指定する（設定ファイルは使わないので普段のプレイには影響しない）。
     ///   --skylight-autotest          自動テストを有効にする（これが無いと何もしない）
-    ///   --skylight-level=ID          曲の levelID（省略時は OST の先頭の曲）
+    ///   --skylight-level=ID          曲の levelID（省略時はカスタム曲の先頭。30秒待っても無ければ OST の先頭。OST 曲は 1.40.8 の BetterMissCounter で曲が始まらないことがある）
     ///   --skylight-diff=Expert       難易度（Easy/Normal/Hard/Expert/ExpertPlus）
     ///   --skylight-delay=5           曲が始まってから1枚目を撮るまでの秒数
     ///   --skylight-shots=3           撮る枚数

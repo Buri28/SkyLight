@@ -5,30 +5,27 @@ using UnityEngine;
 
 namespace SkyLight.Controllers
 {
-    // 「なぜ明るくならないのか」を実機で突き止めるための調査ダンプ。
-    // 曲開始時に1回だけ、カメラ構成・シェーダー在庫・現在の RenderSettings をログへ吐く。
+    // 実機で「なぜそう見えるのか」を調べるための診断ダンプ。
+    // 診断ダンプは DebugLogging が ON のときだけ出す（呼び出し元の SkyLightController も同じ条件で呼ぶ）。
+    // 曲開始時（と3フレーム後）に、カメラ構成・シェーダー在庫・RenderSettings・ライト・Hide 候補をログへ出す。
     internal static class SceneDiagnostics
     {
         public static void Dump()
         {
+            if (!Plugin.IsDebugLoggingEnabled()) return;
             DumpRenderSettings();
             DumpCameras();
             DumpShaderInventory();
-            ProbeSkyboxShaders();
             DumpLargeFlatRenderers();
-            DumpTallRenderers();
-            DumpBuildingLikeRenderers();
             DumpLights();
             DumpSceneRoots();
-            DumpPlatformComponents();
-            DumpFarCenterRenderers();
-            DumpBakedBloomComponents();
         }
 
         // 「Hide Objects」設定用の候補一覧。現在の全レンダラーを名前ごとに集計して出す。
         // ここに出た名前をそのまま設定の HideObjectHints（; 区切り）へコピーすれば非表示にできる。
         // 既に Hide Objects の対象/除外になっている名前や、他の設定（Bars/Neon/Ring等）で管理済みの
         // 名前には行末に印を付けて、二重登録や巻き添えに気付けるようにする。
+        // ログへ出すのは DebugLogging が ON のときだけ。文字列は常に返す（自動テストが candidates.txt に保存する）。
         public static string DumpHideCandidates(Configuration.PluginConfig config)
         {
             var hideArr = SplitHints(config.HideObjectHints);
@@ -110,12 +107,11 @@ namespace SkyLight.Controllers
             return text;
         }
 
-        // 現在ロード中の環境シーン名（例: 'BTSEnvironment'）。環境ごとにオブジェクト名が違うため、
-        // どの環境でのダンプかをヘッダーに残す。見つからなければアクティブシーン名を返す。
         // 診断: 指定シェーダー名を含むレンダラーの、シェーダーの色・数値プロパティと、MaterialPropertyBlock で上書きされている値。
         // （バー＝Custom/Spectrogram の色を変えられるか調べるため）
         public static void DumpShaderProperties(string shaderHint)
         {
+            if (!Plugin.IsDebugLoggingEnabled()) return;
             var sb = new StringBuilder();
             sb.AppendLine($"[SkyLight][diag] === Shader properties ('{shaderHint}') ===");
             var block = new MaterialPropertyBlock();
@@ -145,6 +141,9 @@ namespace SkyLight.Controllers
             Plugin.Log.Info(sb.ToString());
         }
 
+        // 現在ロード中の環境シーン名（例: 'BTSEnvironment'）。環境ごとにオブジェクト名が違う。
+        // HideObjects.json の環境名にも使う（診断ではなく本番で使うので、ここに置いてはいるが消さないこと）。
+        // 見つからなければアクティブシーン名を返す。
         internal static string GetEnvironmentName()
         {
             for (int i = 0; i < UnityEngine.SceneManagement.SceneManager.sceneCount; i++)
@@ -158,57 +157,13 @@ namespace SkyLight.Controllers
             return UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
         }
 
-        private static string[] SplitHints(string? s)
-            => (s ?? string.Empty).Split(';').Select(x => x.Trim()).Where(x => x.Length > 0).ToArray();
+        private static string[] SplitHints(string? s) => HintUtil.Split(s);
 
         // TargetPainter.Matches と同じ基準（名前/パス/シェーダー名の部分一致）。一致したヒントを返す（無ければ null）。
         private static string? FindMatch(string name, string path, string[] shaders, string[] hints)
             => hints.FirstOrDefault(h => name.IndexOf(h, System.StringComparison.OrdinalIgnoreCase) >= 0
                               || path.IndexOf(h, System.StringComparison.OrdinalIgnoreCase) >= 0
                               || shaders.Any(s => s.IndexOf(h, System.StringComparison.OrdinalIgnoreCase) >= 0));
-
-        // BakedBloomはBloomSkyboxQuadと同様、Rendererを無効化しても専用スクリプトが直接描画して
-        // 消えないケースを疑い、GameObject本体と親についている全コンポーネント（Rendererに限らず）を洗い出す。
-        private static void DumpBakedBloomComponents()
-        {
-            var sb = new StringBuilder();
-            sb.AppendLine("[SkyLight][diag] === BakedBloom GameObject components (self + parent) ===");
-            var seen = new HashSet<int>();
-            foreach (var r in Object.FindObjectsOfType<Renderer>())
-            {
-                if (r == null) continue;
-                if (r.gameObject.name.IndexOf("BakedBloom", System.StringComparison.OrdinalIgnoreCase) < 0) continue;
-                if (!seen.Add(r.gameObject.GetInstanceID())) continue;
-                if (seen.Count > 3) break; // 代表例だけで十分
-
-                sb.AppendLine($"  '{GetPath(r.transform)}':");
-                foreach (var c in r.gameObject.GetComponents<Component>())
-                    sb.AppendLine($"    self:   {c.GetType().FullName}");
-                if (r.transform.parent != null)
-                    foreach (var c in r.transform.parent.GetComponents<Component>())
-                        sb.AppendLine($"    parent: {c.GetType().FullName}");
-            }
-            Plugin.Log.Info(sb.ToString());
-        }
-
-        // 名前/シェーダーで絞り込まず、トラック中心軸に近く(|x|<15)、奥にある(z>40)レンダラーを
-        // 全部列挙する（消失点付近に見える正体不明の光の特定用）。enabled状態も出す。
-        private static void DumpFarCenterRenderers()
-        {
-            var sb = new StringBuilder();
-            sb.AppendLine("[SkyLight][diag] === Far-center renderers (|x|<15, z>40) ===");
-            var candidates = Object.FindObjectsOfType<Renderer>()
-                .Where(r => r != null && Mathf.Abs(r.bounds.center.x) < 15f && r.bounds.center.z > 40f)
-                .OrderBy(r => r.bounds.center.z);
-            foreach (var r in candidates)
-            {
-                var b = r.bounds;
-                var shaders = string.Join(",", r.sharedMaterials.Where(m => m != null && m.shader != null).Select(m => m.shader.name).Distinct());
-                sb.AppendLine($"  '{GetPath(r.transform)}' enabled={r.enabled} activeInHierarchy={r.gameObject.activeInHierarchy} " +
-                              $"layer={r.gameObject.layer}({LayerMask.LayerToName(r.gameObject.layer)}) center={b.center} size={b.size} shaders=[{shaders}]");
-            }
-            Plugin.Log.Info(sb.ToString());
-        }
 
         // カスタムプラットフォームは通常シーンの別ルート(GameObjectの最上位祖先)にまるごとぶら下がる。
         // ルート名ごとにRendererを集計すれば、どのルートがプラットフォーム本体かひと目で分かる。
@@ -226,63 +181,11 @@ namespace SkyLight.Controllers
             Plugin.Log.Info(sb.ToString());
         }
 
-        // CustomPlatforms(等)はプラットフォームのルートに"PlatformDescriptor"のような
-        // 名前のコンポーネントを付けるのが定番。アセンブリ参照せずに型名一致だけで探す
-        // （BloomTamerが"MainEffectController"を探すのと同じ手法）。
-        private static void DumpPlatformComponents()
-        {
-            var sb = new StringBuilder();
-            var comps = Resources.FindObjectsOfTypeAll<MonoBehaviour>()
-                .Where(m => m != null && m.GetType().Name.IndexOf("Platform", System.StringComparison.OrdinalIgnoreCase) >= 0)
-                .ToList();
-            sb.AppendLine($"[SkyLight][diag] === Platform-named components ({comps.Count}) ===");
-            foreach (var c in comps)
-                sb.AppendLine($"  type={c.GetType().FullName} gameObject='{GetPath(c.transform)}' active={c.gameObject.activeInHierarchy}");
-            Plugin.Log.Info(sb.ToString());
-        }
-
         private static string GetRootName(Transform t)
         {
             var cur = t;
             while (cur.parent != null) cur = cur.parent;
             return cur.name;
-        }
-
-        // 「ビル/柱/街」らしい名前のレンダラーを大小問わず全部列挙（黒バーの特定用）。
-        private static void DumpBuildingLikeRenderers()
-        {
-            string[] kw = { "Building", "Construction", "Column", "City", "Skyline", "Tower", "Block", "Pillar", "Box", "Cube", "Mesh", "Structure", "Spectrogram" };
-            var sb = new StringBuilder();
-            sb.AppendLine("[SkyLight][diag] === Building-like renderers (name match) ===");
-            foreach (var r in Object.FindObjectsOfType<Renderer>())
-            {
-                if (r == null) continue;
-                var path = GetPath(r.transform);
-                if (!kw.Any(k => path.IndexOf(k, System.StringComparison.OrdinalIgnoreCase) >= 0)) continue;
-                var shaders = string.Join(",", r.sharedMaterials.Where(m => m != null && m.shader != null).Select(m => m.shader.name).Distinct());
-                var b = r.bounds;
-                sb.AppendLine($"  '{path}' layer={r.gameObject.layer}({LayerMask.LayerToName(r.gameObject.layer)}) size=({b.size.x:0.#},{b.size.y:0.#},{b.size.z:0.#}) shaders=[{shaders}]");
-            }
-            Plugin.Log.Info(sb.ToString());
-        }
-
-        // 背の高い大きなレンダラー（横の動くビル等の特定用）。bounds の体積が大きい順に列挙。
-        private static void DumpTallRenderers()
-        {
-            var sb = new StringBuilder();
-            sb.AppendLine("[SkyLight][diag] === Tall renderers (top 40 by height, height>3) ===");
-            var candidates = Object.FindObjectsOfType<Renderer>()
-                .Where(r => r != null && r.bounds.size.y > 3f && r.bounds.size.y < 1000f)
-                .OrderByDescending(r => r.bounds.size.y)
-                .Take(40);
-            foreach (var r in candidates)
-            {
-                var b = r.bounds;
-                var shaders = string.Join(",", r.sharedMaterials.Where(m => m != null && m.shader != null).Select(m => m.shader.name).Distinct());
-                sb.AppendLine($"  '{GetPath(r.transform)}' layer={r.gameObject.layer}({LayerMask.LayerToName(r.gameObject.layer)}) " +
-                              $"size={b.size} shaders=[{shaders}]");
-            }
-            Plugin.Log.Info(sb.ToString());
         }
 
         // シーン内のライト（ノーツを照らす光源の特定用）。Directional/Point/Spot を色・強度・位置つきで列挙。
@@ -353,7 +256,6 @@ namespace SkyLight.Controllers
         private static void DumpShaderInventory()
         {
             // アクティブな Renderer が使っているシェーダー名を集計する。
-            // 標準シェーダー(Standard 等)が多ければ ambient が効く余地あり。unlit/custom ばかりなら効かない。
             var counts = new Dictionary<string, int>();
             foreach (var r in Object.FindObjectsOfType<Renderer>())
             {
@@ -372,27 +274,6 @@ namespace SkyLight.Controllers
             Plugin.Log.Info(sb.ToString());
         }
 
-        private static void ProbeSkyboxShaders()
-        {
-            // どのスカイボックス/塗り潰し用シェーダーがビルドに含まれているかを確認する。
-            string[] candidates =
-            {
-                "Skybox/Procedural", "Skybox/Cubemap", "Skybox/6 Sided", "Skybox/Panoramic",
-                "Mobile/Skybox", "Standard", "Unlit/Color", "Unlit/Texture",
-                "Sprites/Default", "UI/Default", "Hidden/Internal-Colored",
-            };
-            var sb = new StringBuilder();
-            sb.AppendLine("[SkyLight][diag] === Shader.Find probe ===");
-            foreach (var name in candidates)
-                sb.AppendLine($"  {(Shader.Find(name) != null ? "OK  " : "MISS")}  {name}");
-            Plugin.Log.Info(sb.ToString());
-        }
-
-        private static string GetPath(Transform t)
-        {
-            var stack = new Stack<string>();
-            for (var cur = t; cur != null; cur = cur.parent) stack.Push(cur.name);
-            return string.Join("/", stack);
-        }
+        private static string GetPath(Transform t) => HintUtil.GetPath(t);
     }
 }

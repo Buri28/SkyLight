@@ -9,26 +9,27 @@ namespace SkyLight.Configuration
     // 色は hex(#RRGGBB) 文字列で保持し、適用時に Color へ変換する（BSML の color-setting とも相性が良い）。
     public class PluginConfig
     {
-        public static PluginConfig Instance { get; set; } = null!;
-
         // MOD 有効/無効
         public virtual bool Enabled { get; set; } = true;
 
-        // 詳細ログ出力フラグ。true のときだけ Debug レベルの診断ログを出す（既定 OFF）。
+        // ログ出力フラグ（SkyLight.json だけで変える。設定画面には出さない）。
+        // true のときだけ、Warn を含む SkyLight のログと診断ダンプを出す（既定 OFF）。
         // 既存の SkyLight.json に値があればそちらが優先される。
         public virtual bool DebugLogging { get; set; } = false;
 
-        // シーン診断ダンプ。曲開始時にカメラ一覧・シェーダー在庫・RenderSettings をログ出力する（DebugLogging が前提）。
+        // シーン診断ダンプ（SkyLight.json だけで変える）。DebugLogging も true のときだけ、曲開始時にカメラ一覧・
+        // シェーダー在庫・RenderSettings・Hide 候補をログ出力する。DebugLogging が false なら、これが true でも何も出さない。
         public virtual bool DumpScene { get; set; } = false;
 
         // 全画面ブルーム(MainEffectController)の ON/OFF。true=ON（ノーツ/レーザー発光あり）。
         public virtual bool Bloom { get; set; } = true;
 
-        // ── 着色は全対象「半透明（B方式）」で行う。各対象に Color / Brightness / Alpha(不透明度) を持つ。
-        //    Alpha=1 で不透明、低いほど後ろが透ける。Brightness は色のRGBを倍率でスケール。
+        // ── 着色する対象には Color / Brightness / Alpha(不透明度) がある。
+        //    Alpha=1 は不透明（アルファ 0 で描くので Bloom ON でも白飛びしない）、低いほど後ろが透ける（半透明）。
+        //    Brightness は色のRGBを倍率でスケール。
 
         // ─── 背景（空ドーム） ───────────────────────────────
-        // 元の背景を隠さず、半透明ドームを被せて色を乗せる（Alpha<1 で元の背景が透ける）。
+        // 元の背景（BloomSkyboxQuad）を隠して、空ドームで色を乗せる（Alpha<1 のときは元の背景が透ける）。
         public virtual bool RecolorBackground { get; set; } = true;
         public virtual string BackgroundColor { get; set; } = "#778BE2";
         public virtual float BackgroundBrightness { get; set; } = 1.0f;
@@ -45,8 +46,9 @@ namespace SkyLight.Configuration
 
         // ─── 任意オブジェクトの非表示 ───────────────────────────────
         // 名前/パス/シェーダー名の部分一致（; 区切り）で対象を指定して非表示にする。
-        // 対象名の特定手順: DumpScene=true にして曲を開始 → ログの
-        // "[SkyLight][diag] === Hide candidates ===" から名前をコピーしてここに追加する。
+        // 環境ごとの非表示は、設定画面の [Hide] タブ（UserData/SkyLight/Environments/HideObjects.json）で選べる。
+        // ここは全環境共通で消したい名前を書く。名前は、DebugLogging と DumpScene を true にして曲を開始し、ログの
+        // "[SkyLight][diag] === Hide candidates ===" からコピーしてもよい。
         public virtual string HideObjectHints { get; set; } = "";
         public virtual string HideObjectExcludeHints { get; set; } = "";
 
@@ -76,7 +78,7 @@ namespace SkyLight.Configuration
         public virtual string HudBackgroundHints { get; set; } = "BasicGameHUD/LeftPanel/BG;BasicGameHUD/RightPanel/BG;BasicGameHUD/LeftPanel/Top;BasicGameHUD/RightPanel/Top";
         // その他の構造物（環境固有の演出オブジェクト群）。
         public virtual bool ShowOtherStructures { get; set; } = true;
-        public virtual string OtherStructureHints { get; set; } = "Window;Tunnel;MagicDoor;Waterfall;Sun;Rain;Clouds;Aurora;Smoke;Flipbook;Video;Building;Mountain;Orbit;Star;Graffiti;HitQuad;Mesh;Dust;DiamondMirror";
+        public virtual string OtherStructureHints { get; set; } = "Window;Tunnel;MagicDoor;Waterfall;Sun;Rain;Clouds;Aurora;Smoke;Flipbook;Video;Building;Mountain;Orbit;Star;Graffiti;HitQuad;Dust;DiamondMirror";
 
         // ─── 構造物（黒いシルエットの構造物。名前/シェーダーで対象指定） ───────────────────
         public virtual bool ShowStructures { get; set; } = true;
@@ -85,10 +87,10 @@ namespace SkyLight.Configuration
         public virtual bool StructureColorize { get; set; } = true;
         public virtual string StructureColor { get; set; } = "#A695CA";
         public virtual float StructureBrightness { get; set; } = 1.0f;
-        public virtual float StructureAlpha { get; set; } = 0.6999999f;
+        public virtual float StructureAlpha { get; set; } = 0.7f;
         // 対象ヒント（名前/シェーダー名に部分一致、; 区切り）。
         public virtual string StructureShaderHints { get; set; } = "SimpleLit";
-        // 除外ヒント（床・ノーツ・空などを巻き込まないため）。後から追加Obstacle;BurnPS;DepthWrite;Feet;PreviewQuad
+        // 除外ヒント（床・ノーツ・空などを巻き込まないため）。
         public virtual string StructureExcludeHints { get; set; } = "Mirror;Note;Saber;Arrow;Bomb;Skybox;BloomSkyboxQuad;Ring;TrackConstruction;Spectrogram;";
         // 除外の例外（除外ヒントに一致しても、こちらに一致すれば構造物の対象に戻す）。
         // 例: 除外の "Mirror" に巻き込まれる "DiamondMirror" を対象に戻したい場合に "DiamondMirror" を指定。
@@ -107,8 +109,8 @@ namespace SkyLight.Configuration
         public virtual string RingExcludeHints { get; set; } = "";
         public virtual bool RingColorize { get; set; } = true;
         public virtual string RingColor { get; set; } = "#416CD6";
-        public virtual float RingBrightness { get; set; } = 0.6999999f;
-        public virtual float RingAlpha { get; set; } = 0.2999998f;
+        public virtual float RingBrightness { get; set; } = 0.7f;
+        public virtual float RingAlpha { get; set; } = 0.2f;
 
         // Changed イベント（IPA が生成するストアのためのメソッド）
         public virtual void Changed() { }

@@ -136,7 +136,11 @@ namespace SkyLight.AutoTest
             AutoTestOptions.Status($"START level={Get(level, "levelID")} key={Get(key, "difficulty")} " +
                 $"method=({string.Join(", ", ps.Select(p => p.ParameterType.Name))})");
             _invoked = true;
-            method.Invoke(helper, args);
+            try { method.Invoke(helper, args); }
+            catch (System.Reflection.TargetInvocationException tie) when (tie.InnerException != null)
+            {
+                throw tie.InnerException; // status.txt に TargetInvocationException でなく、本当の原因を出す
+            }
             return true;
         }
 
@@ -148,7 +152,7 @@ namespace SkyLight.AutoTest
                 foreach (var info in infos)
                 {
                     if (info == null || Get(info, "environmentType")?.ToString() != "Normal") continue;
-                    lines.Add($"{Get(info, "serializedName")}	{Get(info, "environmentName")}");
+                    lines.Add($"{Get(info, "serializedName")}\t{Get(info, "environmentName")}");
                 }
             System.IO.Directory.CreateDirectory(AutoTestOptions.OutputDir);
             System.IO.File.WriteAllLines(System.IO.Path.Combine(AutoTestOptions.OutputDir, "envs.txt"), lines);
@@ -173,7 +177,7 @@ namespace SkyLight.AutoTest
             return t == null ? null : _container.TryResolve(t);
         }
 
-        // OST の levelID 指定があればそれ、無ければ OST の先頭の曲。
+        // levelID の指定があればそれ、無ければカスタム曲の先頭（allowOst のときだけ OST の先頭）。
         private static object? FindLevel(object levelsModel, bool allowOst)
         {
             var id = AutoTestOptions.LevelId;

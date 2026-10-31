@@ -2,7 +2,8 @@
 # 結果は <インスタンス>\UserData\SkyLight\AutoTest\ の shot-N.png と status.txt。
 #
 # 例: powershell -ExecutionPolicy Bypass -File scripts\autotest.ps1
-#     powershell -ExecutionPolicy Bypass -File scripts\autotest.ps1 -Version 1.40.8 -Shots 2 -Level 100Bills
+#     powershell -ExecutionPolicy Bypass -File scripts\autotest.ps1 -Version 1.40.8 -Shots 2
+# （-Level に OST の曲（100Bills など）は使わない。1.40.8 の BetterMissCounter が例外を出して曲が始まらない。省くと、カスタム曲を自動で選ぶ）
 param(
     [string]$Version = "1.44.1",
     [string]$InstancesDir = "D:\BSManager\BSInstances",
@@ -14,7 +15,7 @@ param(
     [int]$TimeoutSec = 240,
     [string]$Env = "",      # 環境の serializedName（例 DefaultEnvironment）。空なら譜面の既定
     [switch]$ListEnvs,      # 曲を始めず、環境の一覧（envs.txt）だけ書いて終了する
-    [switch]$MenuShot,      # 曲を始めず、設定画面を浮かべて撮る（menu-1/2/3.png）
+    [switch]$MenuShot,      # 曲を始めず、設定画面を浮かべて撮る（menu-tabN.png と menu-tabN-bottom.png）
     [string]$MenuShotObject = "",  # MenuShot で -Env の環境のこの候補を Hide した状態も撮る（撮影後に元へ戻す）
     [string[]]$Set = @(),   # 設定を一時的に変える（例 -Set "DumpScene=true","ShowRing=true"）。終了後に元へ戻す
     [switch]$NoBuild
@@ -36,7 +37,7 @@ if (-not $NoBuild) {
     dotnet build (Join-Path $repo "SkyLight\SkyLight.csproj") -c Debug -nologo -v q
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
-Copy-Item (Join-Path $repo "SkyLight\bin\Debug\net48\net48\SkyLight.dll") (Join-Path $inst "Plugins\") -Force
+Copy-Item (Join-Path $repo "SkyLight\bin\Debug\net48\SkyLight.dll") (Join-Path $inst "Plugins\") -Force
 
 # -Set：SkyLight.json を退避してから書き換え、最後に必ず戻す（途中で止まっても finally で戻す）。
 $cfg = Join-Path $inst "UserData\SkyLight.json"
@@ -84,7 +85,9 @@ try {
     while ((Get-Date) -lt $deadline) {
         Start-Sleep -Seconds 2
         if (Test-Path $status) {
-            $last = (Get-Content $status -Encoding UTF8 | Select-Object -Last 1)
+            # 書き込み中で読めなかったら、次の見回りで読む
+            $last = $null
+            try { $last = (Get-Content $status -Encoding UTF8 -ErrorAction Stop | Select-Object -Last 1) } catch { }
             if ($last -match " DONE$") { $result = "DONE"; break }
             if ($last -match " FAIL ") { $result = "FAIL"; break }
         }
@@ -95,8 +98,10 @@ finally {
     # ゲームの終了を最大30秒待つ（DONE なら自分で終了する）。残っていたら止める。
     $waitUntil = (Get-Date).AddSeconds(30)
     while ((Get-Process -Name "Beat Saber" -ErrorAction SilentlyContinue) -and (Get-Date) -lt $waitUntil) { Start-Sleep -Seconds 1 }
-    $bs = Get-Process -Name "Beat Saber" -ErrorAction SilentlyContinue
-    if ($bs) { $bs | Stop-Process -Force; Write-Host "Beat Saber was stopped by the script."; Start-Sleep -Seconds 2 }
+    # 止めるのは、このスクリプトが起動したプロセスだけ（名前で全部は止めない）
+    if ($proc -and -not $proc.HasExited) { Stop-Process -Id $proc.Id -Force; Write-Host "Beat Saber was stopped by the script."; Start-Sleep -Seconds 2 }
+    # 起動のために変えた環境変数を、このセッションに残さない
+    foreach ($k in "SteamAppId", "SteamGameId", "SteamOverlayGameId") { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
     if (Test-Path $cfgBackup) { Move-Item $cfgBackup $cfg -Force; Write-Host "Config restored." }
 }
 

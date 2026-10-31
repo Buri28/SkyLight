@@ -28,12 +28,16 @@ namespace SkyLight.Configuration
             }
         }
 
-        // プリセット対象プロパティ（bool/int/float/string、get/set 両方あり）。
+        // プリセットにも「Reset to Defaults」にも含めない項目（設定の中身ではなく、MOD やログの状態。
+        // 含めると、他人のプリセットを読み込んだだけで MOD が無効になったり、ログが出たりする）。
+        private static readonly HashSet<string> NotPreset = new HashSet<string> { "Enabled", "DebugLogging", "DumpScene" };
+
+        // プリセット対象プロパティ（bool/int/float/string、get/set 両方あり。NotPreset を除く）。
         private static IEnumerable<PropertyInfo> ConfigProps()
         {
             return typeof(PluginConfig)
                 .GetProperties(BindingFlags.Public | BindingFlags.Instance)
-                .Where(p => p.CanRead && p.CanWrite)
+                .Where(p => p.CanRead && p.CanWrite && !NotPreset.Contains(p.Name))
                 .Where(p => p.PropertyType == typeof(bool)
                          || p.PropertyType == typeof(int)
                          || p.PropertyType == typeof(float)
@@ -68,25 +72,36 @@ namespace SkyLight.Configuration
             }
         }
 
-        /// <summary>現在の設定を name のプリセットとして保存する（上書き）。</summary>
-        public static bool Save(string name, PluginConfig cfg)
+        /// <summary>
+        /// 現在の設定を name のプリセットとして保存する（上書き）。
+        /// 保存に使った名前（ファイル名から使えない文字を除いたもの）を返す。失敗なら null。
+        /// </summary>
+        public static string? Save(string name, PluginConfig cfg)
         {
-            if (string.IsNullOrWhiteSpace(name) || cfg == null) return false;
+            if (string.IsNullOrWhiteSpace(name) || cfg == null) return null;
             try
             {
                 Directory.CreateDirectory(PresetDir);
                 var obj = new JObject();
                 foreach (var p in ConfigProps())
                     obj[p.Name] = JToken.FromObject(p.GetValue(cfg) ?? "");
-                File.WriteAllText(PathFor(name), obj.ToString(Formatting.Indented));
+                SafeFile.WriteAllText(PathFor(name), obj.ToString(Formatting.Indented));
                 Plugin.DebugLog($"[SkyLight] Preset saved: {name}");
-                return true;
+                return SanitizeFileName(name);
             }
             catch (Exception ex)
             {
                 Plugin.DebugWarn($"[SkyLight] Preset save failed ({name}): {ex.Message}");
-                return false;
+                return null;
             }
+        }
+
+        /// <summary>プリセットの対象の項目を、すべて既定値（new PluginConfig()）へ戻す。「Reset to Defaults」とプリセット読込の共通部分。</summary>
+        public static void ResetToDefaults(PluginConfig cfg)
+        {
+            var defaults = new PluginConfig();
+            foreach (var p in ConfigProps())
+                p.SetValue(cfg, p.GetValue(defaults));
         }
 
         /// <summary>
@@ -106,11 +121,15 @@ namespace SkyLight.Configuration
             {
                 var obj = JObject.Parse(File.ReadAllText(path));
                 var defaults = new PluginConfig(); // ファイルに無い項目はこの既定値に戻す
+                // 先に全項目の値を読み終えてから反映する（不正な値で途中で例外が出ても、設定が中途半端に変わらない）
+                var values = new List<(PropertyInfo prop, object value)>();
+                int known = 0;
                 foreach (var p in ConfigProps())
                 {
                     object value;
                     if (obj.TryGetValue(p.Name, out var tok) && tok.Type != JTokenType.Null)
                     {
+                        known++;
                         value =
                             p.PropertyType == typeof(bool)   ? (object)tok.Value<bool>() :
                             p.PropertyType == typeof(int)    ? (object)tok.Value<int>() :
@@ -121,8 +140,15 @@ namespace SkyLight.Configuration
                     {
                         value = p.GetValue(defaults); // プリセットに無い項目は既定値
                     }
-                    p.SetValue(cfg, value);
+                    values.Add((p, value));
                 }
+                if (known == 0)
+                {
+                    // 設定の項目が1つも無い json（プリセットでないファイル）を読み込んで、全部を既定値に戻してしまわない
+                    Plugin.DebugWarn($"[SkyLight] Preset has no known settings: {name}");
+                    return false;
+                }
+                foreach (var (p, value) in values) p.SetValue(cfg, value);
                 cfg.Changed();
                 Plugin.DebugLog($"[SkyLight] Preset loaded: {name}");
                 return true;

@@ -60,11 +60,6 @@ namespace SkyLight.Controllers.Gameplay
             return sceneName != null && sceneName.IndexOf("Menu", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
-        private static string GetPath(Transform t)
-        {
-            var stack = new Stack<string>();
-            for (var cur = t; cur != null; cur = cur.parent) stack.Push(cur.name);
-            return string.Join("/", stack);
-        }
+        private static string GetPath(Transform t) => HintUtil.GetPath(t);
     }
 }

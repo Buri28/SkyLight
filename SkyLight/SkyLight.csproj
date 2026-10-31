@@ -12,9 +12,11 @@
     <BeatSaberPath Condition="'$(BeatSaberPath)' == ''">D:\BSManager\BSInstances\1.40.8</BeatSaberPath>
     <BeatSaberManagedPath>$(BeatSaberPath)\Beat Saber_Data\Managed</BeatSaberManagedPath>
     <BeatSaberPluginsPath>$(BeatSaberPath)\Plugins</BeatSaberPluginsPath>
-    <!-- BSIPA / SiraUtil / BSML の同梱コピーは LRCounter の externals を流用する -->
-    <BundledDepsDir>$(MSBuildThisFileDirectory)..\..\LRCounter\externals\extracted</BundledDepsDir>
+    <!-- BSIPA / SiraUtil / BSML は、まずゲーム側（Managed・Plugins）から探す。無いときだけ同梱コピーを使う。
+         既定は LRCounter の externals（兄弟リポジトリ）。環境変数 BundledDepsDir（または -p:BundledDepsDir=...）で変えられる -->
+    <BundledDepsDir Condition="'$(BundledDepsDir)' == ''">$(MSBuildThisFileDirectory)..\..\LRCounter\externals\extracted</BundledDepsDir>
     <OutputPath>bin\$(Configuration)\$(TargetFramework)\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
   </PropertyGroup>
 
   <ItemGroup>
@@ -55,14 +57,8 @@
 
     <!-- IPA / BSIPA -->
     <Reference Include="IPA">
-      <HintPath>$(BundledDepsDir)\bsipa\IPA\Data\Managed\IPA.Loader.dll</HintPath>
-      <Private>False</Private>
-      <SpecificVersion>False</SpecificVersion>
-    </Reference>
-
-    <!-- Harmony -->
-    <Reference Include="0Harmony">
-      <HintPath>$(BundledDepsDir)\bsipa\IPA\Libs\0Harmony.dll</HintPath>
+      <HintPath Condition="Exists('$(BeatSaberManagedPath)\IPA.Loader.dll')">$(BeatSaberManagedPath)\IPA.Loader.dll</HintPath>
+      <HintPath Condition="!Exists('$(BeatSaberManagedPath)\IPA.Loader.dll')">$(BundledDepsDir)\bsipa\IPA\Data\Managed\IPA.Loader.dll</HintPath>
       <Private>False</Private>
       <SpecificVersion>False</SpecificVersion>
     </Reference>

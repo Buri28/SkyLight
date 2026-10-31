@@ -12,11 +12,21 @@ namespace SkyLight.Controllers.Settings
     /// <summary>
     /// ソロメニューの MODS タブに表示する SkyLight の設定画面。BSML を使用します。
     /// </summary>
-    [ViewDefinition("SkyLight.Views.SkyLightSettingsView.bsml")]
+    [ViewDefinition(SkyLightSettingsController.ResourceName)]
+#if DEBUG
+    // 開発用のホットリロード（ビルドした環境のパスが DLL に入るので、Release には入れない）
     [HotReload(RelativePathToLayout = @"..\Views\SkyLightSettingsView.bsml")]
+#endif
     public class SkyLightSettingsController : BSMLAutomaticViewController
     {
+        // 埋め込みリソースの BSML。MODS タブ（SkyLightMenuManager）と ViewDefinition で同じ名前を使う
+        public const string ResourceName = "SkyLight.Views.SkyLightSettingsView.bsml";
+
         private PluginConfig _config = null!;
+
+        // json の色が読めないときに使う色。PluginConfig の既定値を正とする（別の値を二重に持たない）
+        private static readonly PluginConfig Defaults = new PluginConfig();
+        private static Color DefaultColor(string hex) => ColorUtil.ParseHex(hex, Color.white);
 
         [Inject]
         public void Construct(PluginConfig config)
@@ -43,7 +53,7 @@ namespace SkyLight.Controllers.Settings
         [UIValue("background-color")]
         public Color BackgroundColor
         {
-            get => ColorUtil.ParseHex(_config.BackgroundColor, new Color(0.29f, 0.48f, 0.71f));
+            get => ColorUtil.ParseHex(_config.BackgroundColor, DefaultColor(Defaults.BackgroundColor));
             set { _config.BackgroundColor = ColorUtil.ToHex(value); _config.Changed(); }
         }
 
@@ -114,7 +124,7 @@ namespace SkyLight.Controllers.Settings
         [UIValue("floor-color")]
         public Color FloorColor
         {
-            get => ColorUtil.ParseHex(_config.FloorColor, new Color(0.13f, 0.16f, 0.19f));
+            get => ColorUtil.ParseHex(_config.FloorColor, DefaultColor(Defaults.FloorColor));
             set { _config.FloorColor = ColorUtil.ToHex(value); _config.Changed(); }
         }
 
@@ -157,7 +167,7 @@ namespace SkyLight.Controllers.Settings
         [UIValue("structure-color")]
         public Color StructureColor
         {
-            get => ColorUtil.ParseHex(_config.StructureColor, new Color(0.25f, 0.38f, 0.63f));
+            get => ColorUtil.ParseHex(_config.StructureColor, DefaultColor(Defaults.StructureColor));
             set { _config.StructureColor = ColorUtil.ToHex(value); _config.Changed(); }
         }
 
@@ -213,13 +223,6 @@ namespace SkyLight.Controllers.Settings
         // 全環境共通の HideObjectHints / HideObjectExcludeHints は画面に出さない（VR のソフトキーボードで長い名前を
         // 打つことはまず無く、環境ごとの欄で足りるため）。SkyLight.json を直接書けば今までどおり効く。
 
-        [UIValue("dump-scene")]
-        public bool DumpScene
-        {
-            get => _config.DumpScene;
-            set { _config.DumpScene = value; _config.Changed(); }
-        }
-
         [UIValue("paint-ring")]
         public bool PaintRing
         {
@@ -245,7 +248,7 @@ namespace SkyLight.Controllers.Settings
         [UIValue("ring-color")]
         public Color RingColor
         {
-            get => ColorUtil.ParseHex(_config.RingColor, new Color(0.227f, 0.627f, 1f));
+            get => ColorUtil.ParseHex(_config.RingColor, DefaultColor(Defaults.RingColor));
             set { _config.RingColor = ColorUtil.ToHex(value); _config.Changed(); }
         }
 
@@ -267,45 +270,9 @@ namespace SkyLight.Controllers.Settings
         [UIAction("reset-settings")]
         public void ResetSettings()
         {
-            // PluginConfig の初期化子を単一の正として使い、既定値インスタンスから読み戻す。
-            var d = new PluginConfig();
-
-            _config.Enabled = d.Enabled;
-            _config.RecolorBackground = d.RecolorBackground;
-            _config.BackgroundColor = d.BackgroundColor;
-            _config.BackgroundBrightness = d.BackgroundBrightness;
-            _config.BackgroundAlpha = d.BackgroundAlpha;
-            _config.Bloom = d.Bloom;
-            _config.HideNeon = d.HideNeon;
-            _config.ShowCustomBackground = d.ShowCustomBackground;
-            _config.MirrorReflection = d.MirrorReflection;
-            _config.ShowFloor = d.ShowFloor;
-            _config.ShowSideLanes = d.ShowSideLanes;
-            _config.ShowLights = d.ShowLights;
-            _config.ShowLogo = d.ShowLogo;
-            _config.ShowOtherStructures = d.ShowOtherStructures;
-            _config.ShowHudBackground = d.ShowHudBackground;
-            _config.PaintFloor = d.PaintFloor;
-            _config.FloorColor = d.FloorColor;
-            _config.FloorBrightness = d.FloorBrightness;
-            _config.FloorAlpha = d.FloorAlpha;
-            _config.ShowStructures = d.ShowStructures;
-            _config.PaintStructures = d.PaintStructures;
-            _config.StructureColorize = d.StructureColorize;
-            _config.StructureColor = d.StructureColor;
-            _config.StructureBrightness = d.StructureBrightness;
-            _config.StructureAlpha = d.StructureAlpha;
-            _config.ShowBars = d.ShowBars;
-            _config.BarShaderHints = d.BarShaderHints;
-            _config.ShowRing = d.ShowRing;
-            _config.PaintRing = d.PaintRing;
-            _config.RingShaderHints = d.RingShaderHints;
-            _config.RingColorize = d.RingColorize;
-            _config.RingColor = d.RingColor;
-            _config.RingBrightness = d.RingBrightness;
-            _config.RingAlpha = d.RingAlpha;
-            _config.HideObjectHints = d.HideObjectHints;
-            _config.HideObjectExcludeHints = d.HideObjectExcludeHints;
+            // PluginConfig の初期化子を単一の正として、プリセットの対象の項目を全部（画面に出さない hint 類も）既定値へ戻す。
+            // Enabled・DebugLogging・DumpScene は設定の中身ではないので戻さない（PresetManager.NotPreset）。
+            PresetManager.ResetToDefaults(_config);
             _config.Changed();
             NotifyAllUi();
         }
@@ -345,7 +312,6 @@ namespace SkyLight.Controllers.Settings
             NotifyPropertyChanged(nameof(RingColor));
             NotifyPropertyChanged(nameof(RingBrightness));
             NotifyPropertyChanged(nameof(RingAlpha));
-            NotifyPropertyChanged(nameof(DumpScene));
         }
 
         // ───── Presets ─────────────────────────────────────────────
@@ -384,8 +350,10 @@ namespace SkyLight.Controllers.Settings
                 ? names.Cast<object>().ToList()
                 : new List<object> { NoPreset };
 
-            if (!string.IsNullOrEmpty(select) && names.Contains(select!))
-                PresetSelected = select!;
+            // 大文字小文字だけ違う名前でも、同じファイル（Windows）なので、同じものを選ぶ
+            var hit = string.IsNullOrEmpty(select) ? null : names.FirstOrDefault(n => string.Equals(n, select, System.StringComparison.OrdinalIgnoreCase));
+            if (hit != null)
+                PresetSelected = hit;
             else if (!PresetOptions.Contains(PresetSelected))
                 PresetSelected = (string)PresetOptions[0];
 
@@ -424,10 +392,12 @@ namespace SkyLight.Controllers.Settings
         {
             var name = string.IsNullOrWhiteSpace(PresetName) ? PresetSelected : PresetName.Trim();
             if (string.IsNullOrWhiteSpace(name) || name == NoPreset) return;
-            if (PresetManager.Save(name, _config))
+            // 保存に使った名前（ファイル名に使えない文字を除いたもの）で、選択と Save As 欄を合わせる
+            var saved = PresetManager.Save(name, _config);
+            if (saved != null)
             {
-                RebuildPresetOptions(name);
-                PresetName = name;
+                RebuildPresetOptions(saved);
+                PresetName = saved;
                 NotifyPropertyChanged(nameof(PresetName));
                 NotifyPropertyChanged(nameof(PresetOptions));
                 NotifyPropertyChanged(nameof(PresetSelected));
@@ -441,6 +411,8 @@ namespace SkyLight.Controllers.Settings
             if (PresetSelected == NoPreset) return;
             PresetManager.Delete(PresetSelected);
             RebuildPresetOptions(null);
+            PresetName = "";  // 消した名前が Save As 欄に残ると、そのまま Save して作り直してしまう
+            NotifyPropertyChanged(nameof(PresetName));
             NotifyPropertyChanged(nameof(PresetOptions));
             NotifyPropertyChanged(nameof(PresetSelected));
         }
