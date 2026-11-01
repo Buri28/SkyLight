@@ -23,7 +23,7 @@ BSIPA、BeatSaberMarkupLanguage（BSML）、SiraUtil。
 
 | タブ | 内容 |
 |---|---|
-| Main | MOD の ON/OFF、BloomのON/OFF<br>空・床・構造物・リング・ネオン・バー・ライト・ロゴなど表示/非表示を設定<br>プリセット機能<br>デフォルト設定にリセット |
+| Main | MOD の ON/OFF、BloomのON/OFF<br>空・床・構造物・リング・ネオン・バー・ライト・ロゴなど表示/非表示を設定【ざっくり設定】<br>プリセット機能<br>デフォルト設定にリセット |
 | Sky / Floor | 空の色・明るさ・不透明度、床の色・明るさ・不透明度、床の反射(Mirror Reflection)を設定 |
 | Objects | 構造物とリングの色・明るさ・不透明度を設定 |
 | Hide | 環境ごとに、非表示にするオブジェクトを設定【カスタム設定】 |
