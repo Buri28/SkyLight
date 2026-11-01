@@ -6,7 +6,7 @@
 加齢で視力が落ち、暗い背景でノーツが滲んだりブレて見える自分用に作ったものですが  
 AIの進化によりブルーム設定が背景や床に効いてしまう問題とリングの描画遅延の問題が解決したので公開します。  
 
-|  |  |
+| デフォルト設定 | Buriの設定(背景の明るさ：0.70 薄暗いぐらいが目にやさしい) |
 |---|---|
 | <img src="docs/images/play-shot-2.png" width="640"> | <img width="640" alt="image" src="https://github.com/user-attachments/assets/ad7f05c3-a804-41ca-b009-99f995bc32f6" /> |
 
